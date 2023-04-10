@@ -1,0 +1,39 @@
+[profile.release]
+opt-level = 2 # fast and small wasm
+
+# Optimize all dependencies even in debug builds:
+[profile.dev.package."*"]
+opt-level = 2
+debug = false
+debug-assertions = false
+overflow-checks = false
+
+
+[env]
+APPLICATION_NAME_PRETTY = "Dynotest Application"
+[patch.crates-io]
+# [package.metadata.bundle]
+# name = "dynotest_app"
+# description = "Dynotest GUI Application"
+# version.workspace = true
+# identifier = "co.id.polije.dynotests"
+# icon = ["./assets/logo10.png", "./icons/logo.png"]
+# version = "0.1.0"
+# copyright = "Copyright (c) 2022 Rizal Achmad Pahlevi. All rights reserved."
+# category = "Dynotest Application"
+# short_description = "Dynotest Monitoring App written in rust."
+# license = "MIT OR Apache-2.0"
+# license-file = "LICENSE.txt"
+# # osx_minimum_system_version = "10.8"
+# # osx_url_schemes = ["com.hacknus.serial_monitor"]
+
+# [package.metadata.wix]
+# dbg-build = false
+# dbg-name = false
+# name = "DynotestApp"
+# no-build = false
+# output = "target/wix/dynotest-app.msi"
+# version = "0.1.0"
+# license = "MIT OR Apache-2.0"
+# license-file = "LICENSE.txt"
+
