@@ -1,4 +1,4 @@
-use eframe::egui::{plot, Color32, ComboBox, Response, TextStyle, Ui};
+use eframe::egui::{plot, ComboBox, Response, TextStyle, Ui};
 use std::ops::RangeInclusive;
 
 // pub struct RealtimePlot {
@@ -6,6 +6,7 @@ use std::ops::RangeInclusive;
 
 pub struct MultiRealtimePlot {
     coordinates: bool,
+    animates: bool,
     line_style: plot::LineStyle,
 }
 
@@ -13,6 +14,7 @@ impl Default for MultiRealtimePlot {
     fn default() -> Self {
         Self {
             line_style: plot::LineStyle::Solid,
+            animates: false,
             coordinates: true,
         }
     }
@@ -21,6 +23,10 @@ impl Default for MultiRealtimePlot {
 impl MultiRealtimePlot {
     pub fn new() -> Self {
         Self::default()
+    }
+    pub fn animate(mut self, animeate: bool) -> Self {
+        self.animates = animeate;
+        self
     }
 
     pub fn options_ui(&mut self, ui: &mut Ui) {
@@ -70,7 +76,7 @@ impl MultiRealtimePlot {
     }
 }
 
-use dyno_types::{data_buffer::BufferData, infomotor::InfoMotor};
+use dyno_types::data_buffer::BufferData;
 
 impl MultiRealtimePlot {
     const LEGENDS: plot::Legend = plot::Legend {
@@ -79,56 +85,38 @@ impl MultiRealtimePlot {
         position: plot::Corner::RightTop,
     };
 
-    pub fn ui(&mut self, ui: &mut Ui, data: &'_ BufferData, info: &'_ InfoMotor) -> Response {
-        let InfoMotor {
-            name,
-            cc,
-            cylinder,
-            stroke,
-            transmition,
-            ..
-        } = info;
-        ui.centered_and_justified(|ui| {
-            ui.heading("Dynotest Graph's");
-            ui.separator();
-            ui.colored_label(Color32::LIGHT_BLUE, name);
-            ui.label(format!(
-                "| cc: {cc} | cylinder: {cylinder} | stroke: {stroke} | transmition: {transmition} |"
-            ));
-            ui.separator();
-        });
-
+    pub fn ui(&mut self, ui: &mut Ui, data: &'_ BufferData) -> Response {
+        if self.animates {
+            ui.ctx().request_repaint();
+        }
         let show_line_callback = |pui: &mut plot::PlotUi, range: RangeInclusive<usize>| {
             range
                 .map(|index| {
-                    let points = data.get_points::<plot::PlotPoints>(index);
-                    let style = Self::style_byidx(index);
-                    let line = plot::Line::new(points)
-                        .style(style)
-                        .name(BufferData::BUFFER_NAME[index]);
-
-                    Some(line)
+                    plot::Line::new(data.get_points::<plot::PlotPoints>(index))
+                        .style(Self::style_byidx(index))
+                        .name(BufferData::BUFFER_NAME[index])
                 })
-                .filter_map(|x| x)
                 .for_each(|line| pui.line(line))
         };
-
-        ui.horizontal_wrapped(|ui| {
-            let first = self.first_plot_io(ui, show_line_callback);
+        ui.vertical_centered_justified(|ui| {
+            let spacing = ui.spacing().item_spacing.y;
+            let height = ui.available_height() * 0.5 - (spacing * 2.0);
+            let first = self.first_plot_io(ui, height, show_line_callback);
             ui.separator();
-            let second = self.second_plot_ui(ui, show_line_callback);
+            let second = self.second_plot_ui(ui, height, show_line_callback);
 
             first.union(second)
         })
         .response
     }
 
-    fn first_plot_io<F>(&mut self, ui: &mut Ui, callback: F) -> Response
+    fn first_plot_io<F>(&mut self, ui: &mut Ui, height: f32, callback: F) -> Response
     where
         F: Fn(&mut plot::PlotUi, RangeInclusive<usize>),
     {
         plot::Plot::new("Speed and RPM Graph")
             .legend(Self::LEGENDS)
+            .height(height)
             .x_axis_formatter(Self::x_axis_fmt)
             .allow_drag(false)
             .allow_scroll(false)
@@ -141,13 +129,14 @@ impl MultiRealtimePlot {
             .response
     }
 
-    fn second_plot_ui<F>(&mut self, ui: &mut Ui, callback: F) -> Response
+    fn second_plot_ui<F>(&mut self, ui: &mut Ui, height: f32, callback: F) -> Response
     where
         F: Fn(&mut plot::PlotUi, RangeInclusive<usize>),
     {
         plot::Plot::new("Torque, Power and Temp Graph")
             .legend(Self::LEGENDS)
             .x_axis_formatter(Self::x_axis_fmt)
+            .height(height)
             .allow_drag(false)
             .allow_scroll(false)
             .allow_boxed_zoom(false)

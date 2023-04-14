@@ -1,7 +1,7 @@
 use dynotest_app::widgets::DynoWidgets;
 use serde::{Deserialize, Serialize};
 
-use crate::{controller::Controller, PACKAGE_INFO};
+use crate::PACKAGE_INFO;
 use eframe::egui::*;
 
 #[derive(Deserialize, Serialize)]
@@ -10,6 +10,7 @@ pub struct StartupWindow {
 }
 
 impl StartupWindow {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Box<dyn eframe::App + 'static> {
         Box::new(Self { open: true })
     }

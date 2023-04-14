@@ -12,18 +12,11 @@ repository = "https://github.com/dynotestpolije/dyno_app"
 default = ["images"]
 images = ["dep:image"]
 use_plotter = ["dep:plotters"]
-enable_console_logger = ["log4rs/console_appender"]
 barcodes = ["dep:barcoders", "dep:datamatrix", "dep:qrcode"]
-compasses = []
-filesystem = []
-knobs = []
+dbg_log  = []
 
-# [lib]
-# # name = "dyno"
-# path = "src/lib.rs"
 
 [dependencies]
-
 serde       = { version = "1", features = ["derive"] }
 bytes       = { version = "1" }
 directories = { version = "5" }
@@ -38,14 +31,16 @@ default-features = true
 features = ["persistence", "dark-light"]
 
 [dependencies.dyno_types]
-git = "https://github.com/dynotestpolije/dyno_types.git"
-branch = "main" 
+# if in release change to git url main branch
+# git = "https://github.com/dynotestpolije/dyno_types.git"
+# branch = "main" 
+path = "../dyno_types"
 features = ["frontend"]
 
 [dependencies.rfd]
 version = "0.11"
-default-features = false
-features = ["xdg-portal"]
+# default-features = false
+# features = ["xdg-portal"]
 
 [dependencies.log4rs]
 version = "1.2"

@@ -147,8 +147,11 @@ impl LoggerUi {
 /// Draws the logger ui
 /// has to be called after [`init()`](init());
 #[inline(always)]
-pub fn logger_ui(ui: &mut egui::Ui) {
+pub fn logger_ui(ctx: &egui::Context) {
     if let Ok(mut uilog) = LOGGER_UI.lock() {
-        uilog.ui(ui)
+        egui::Window::new("Dyno Log Window")
+            .resizable(true)
+            .id("dyno_log_window".into())
+            .show(ctx, |ui| uilog.ui(ui));
     }
 }

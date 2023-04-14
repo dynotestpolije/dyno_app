@@ -8,10 +8,21 @@ pub mod window;
 pub use constant::*;
 pub use dyno_types as types;
 
-// const SIZE_TRIGGER_ROLLING_FILE: u64 = 50 * 1024 * 1024; // 50Mb
-
 pub fn init_logger<'err>(file: impl AsRef<std::path::Path>) -> types::DynoResult<'err, ()> {
-    types::log_to_file(file, types::log::LevelFilter::Info, true)
+    let builder = types::LoggerBuilder::new()
+        .set_file(file.as_ref().to_path_buf())
+        .set_max_size(10);
+
+    if cfg!(debug_assertions) {
+        builder
+            .set_max_level(types::log::LevelFilter::Debug)
+            .build_console_logger()
+    } else {
+        builder
+            .set_max_level(types::log::LevelFilter::Warn)
+            .set_roll_action(types::RollAction::Roll)
+            .build_file_logger()
+    }
 }
 
 #[macro_export]

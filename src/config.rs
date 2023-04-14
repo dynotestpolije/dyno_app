@@ -6,7 +6,7 @@ use eframe::{
 use crate::{assets::ICO_LOGO, open_option_icon, widgets::DynoWidgets};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct CoreConfig {
     pub app_options: AppOptions,
     pub show_startup: bool,
@@ -16,15 +16,6 @@ impl CoreConfig {
     pub fn check_is_changed(&mut self, other: &Self) {
         if !self.app_options.eq(&other.app_options) && self.show_startup != other.show_startup {
             *self = other.clone();
-        }
-    }
-}
-
-impl Default for CoreConfig {
-    fn default() -> Self {
-        Self {
-            app_options: AppOptions::default(),
-            show_startup: true,
         }
     }
 }

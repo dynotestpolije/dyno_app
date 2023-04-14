@@ -2,7 +2,6 @@ use dyno_types::Numeric;
 use eframe::egui::*;
 use eframe::emath::Rot2;
 
-use super::value_to_radians;
 #[derive(Debug, Clone)]
 pub struct Gauges {
     value: f32,
@@ -22,11 +21,11 @@ impl Gauges {
     }
 
     pub fn speed(value: impl Numeric) -> Self {
-        Self::new(GaugeTypes::RpmGauge, value.to_f32()).animated(true)
+        Self::new(GaugeTypes::SpeedGauge, value.to_f32()).animated(true)
     }
 
     pub fn rpm(value: impl Numeric) -> Self {
-        Self::new(GaugeTypes::SpeedGauge, value.to_f32()).animated(true)
+        Self::new(GaugeTypes::RpmGauge, value.to_f32()).animated(true)
     }
 
     pub fn torque(value: impl Numeric) -> Self {
@@ -75,14 +74,15 @@ impl Widget for Gauges {
                 foreground_color: _,
             } = types.presets(ui.visuals());
 
-            let value = ui.ctx().animate_value_with_time(
+            let value_degree = ui.ctx().animate_value_with_time(
                 response.id,
-                value_to_radians(value, max, min, min_degree, max_degree),
+                (((value - min) / (max - min)) * (max_degree - min_degree) + min_degree)
+                    .clamp(min_degree, max_degree),
                 ui.style().animation_time,
             );
 
             let painter = GaugeBG::new(self.types).draw(ui, rect, radius);
-            GaugeNeedle::new(value, center, radius, needle_color).draw(&painter);
+            GaugeNeedle::new(value_degree, center, radius, needle_color).draw(&painter);
         }
         response.on_hover_text(self.types.to_string())
     }
@@ -110,7 +110,7 @@ impl GaugeNeedle {
             color,
             center,
             radius: radius * 0.1,
-            vec: Rot2::from_angle(value) * Vec2 { x: 0f32, y: radius },
+            vec: Rot2::from_angle(value.to_radians()) * Vec2 { x: 0f32, y: radius },
         }
     }
 
@@ -124,10 +124,13 @@ impl GaugeNeedle {
 
         let length = vec.length() / 4f32;
         let dir = vec.normalized();
+        let tip = center + vec;
         let points = vec![
-            center + vec,
-            center - length * (Self::ROT * dir),
-            center - length * (Self::ROT.inverse() * dir),
+            self.center + self.vec,
+            tip - (length * 0.3) * (Self::ROT * dir),
+            self.center - length * (Self::ROT * dir),
+            self.center - length * (Self::ROT.inverse() * dir),
+            tip - (length * 0.3) * (Self::ROT.inverse() * dir),
         ];
 
         painter.add(Shape::convex_polygon(points, color, Stroke::NONE));
@@ -220,25 +223,25 @@ impl GaugeTypes {
                 needle_color: Color32::from_rgb(0, 204, 255),
                 foreground_color: Color32::from_rgb(85, 221, 255),
                 min: 0f32,
-                max: 400f32,
-                min_degree: 0f32,
-                max_degree: 270f32,
+                max: 240f32,
+                min_degree: 50f32,
+                max_degree: 310f32,
             },
             GaugeTypes::TorqueGauge => GaugePreset {
                 needle_color: Color32::from_rgb(0, 204, 255),
                 foreground_color: Color32::from_rgb(85, 221, 255),
                 min: 0f32,
-                max: 15f32,
-                min_degree: 0f32,
-                max_degree: 270f32,
+                max: 100f32,
+                min_degree: 50f32,
+                max_degree: 310f32,
             },
             GaugeTypes::HorsepowerGauge => GaugePreset {
                 needle_color: Color32::from_rgb(0, 204, 255),
                 foreground_color: Color32::from_rgb(85, 221, 255),
                 min: 0f32,
-                max: 15f32,
-                min_degree: 0f32,
-                max_degree: 270f32,
+                max: 100f32,
+                min_degree: 50f32,
+                max_degree: 310f32,
             },
         }
     }

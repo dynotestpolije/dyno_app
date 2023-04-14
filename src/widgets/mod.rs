@@ -22,7 +22,7 @@ pub use ploter::MultiRealtimePlot;
 pub use common::*;
 
 // ----------------------------------------------------------------------------
-pub trait DynoWidgets: button::ButtonExt {
+pub trait DynoWidgets: button::ButtonExt + Sized {
     fn seven_segment<S>(&mut self, value: S) -> eframe::egui::Response
     where
         S: AsRef<str>;
@@ -508,8 +508,9 @@ impl Default for DisplayStyle {
 }
 
 #[non_exhaustive]
-#[derive(Clone, Copy, Debug, dyno_types::derive_more::Display, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, dyno_types::derive_more::Display, Eq, PartialEq, Default)]
 pub enum DisplayStylePreset {
+    #[default]
     #[display(fmt = "Default")]
     Default,
 
@@ -542,6 +543,24 @@ pub enum DisplayStylePreset {
 
     #[display(fmt = "Yamaha MU2000")]
     YamahaMU2000,
+}
+impl DisplayStylePreset {
+    pub fn get_iter(self) -> core::array::IntoIter<Self, 11> {
+        [
+            Self::Default,
+            Self::Calculator,
+            Self::NintendoGameBoy,
+            Self::KnightRider,
+            Self::BlueNegative,
+            Self::Amber,
+            Self::LightBlue,
+            Self::DeLoreanRed,
+            Self::DeLoreanGreen,
+            Self::DeLoreanAmber,
+            Self::YamahaMU2000,
+        ]
+        .into_iter()
+    }
 }
 
 impl DisplayStylePreset {

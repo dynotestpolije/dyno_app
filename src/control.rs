@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use dyno_types::{
     data_buffer::{BufferData, Data},
@@ -8,10 +8,9 @@ use dyno_types::{
 use dynotest_app::{
     config::CoreConfig,
     paths::DynoPaths,
-    service::{PortInfo, SerialService},
+    service::{self, PortInfo, SerialService},
     widgets::{
         button::{ButtonExt, ButtonKind},
-        popup::{PopupLevel, PopupWindow},
         DynoFileManager, DynoWidgets, MultiRealtimePlot,
     },
 };
@@ -29,45 +28,24 @@ enum PanelSetting {
 }
 
 #[derive(Clone, Deserialize, Serialize)]
-pub struct Controller {
+pub struct DynoControl {
     #[serde(skip)]
     #[serde(default)]
     service: Option<SerialService>,
 
-    paths: DynoPaths,
-    config: CoreConfig,
-
+    #[serde(skip)]
+    #[serde(default)]
     buffer: BufferData,
+
     info: InfoMotor,
     panel_setting: PanelSetting,
     edit_path: bool,
-
     show_setting_ui: bool,
 }
-impl Default for Controller {
+impl Default for DynoControl {
     fn default() -> Self {
-        let service = dynotest_app::service::init_serial();
-        let paths = match DynoPaths::new(crate::PACKAGE_INFO.app_name) {
-            Ok(p) => p,
-            Err(err) => {
-                if !crate::msg_dialog_err!(
-                    OkIgnore => ["Quit the Application", "Ignore the error and continue the Application"],
-                    "Error Initializing Path Config",
-                    "cause: {err}"
-                ) {
-                    dyno_types::log::error!("Quiting Application From error; {err}");
-                    std::process::exit(0);
-                }
-                DynoPaths::default()
-            }
-        };
-        let config = paths
-            .get_config::<CoreConfig>("config.toml")
-            .unwrap_or_default();
         Self {
-            service,
-            paths,
-            config,
+            service: None,
             buffer: BufferData::new(),
             info: InfoMotor::new(),
             panel_setting: PanelSetting::Generic,
@@ -77,15 +55,14 @@ impl Default for Controller {
     }
 }
 
-impl Controller {
+impl DynoControl {
     pub fn new() -> Self {
         Self::default()
     }
-    #[inline]
-    pub fn check_if_change(&mut self, other: impl AsRef<Self>) {
-        let Self { config, paths, .. } = other.as_ref();
-        self.config.check_is_changed(config);
-        self.paths.check_is_changed(paths);
+
+    #[allow(unused)]
+    pub fn init_serial(&mut self) {
+        self.service = service::init_serial();
     }
 
     #[inline]
@@ -101,6 +78,7 @@ impl Controller {
         self.buffer.last()
     }
 
+    #[allow(unused)]
     #[inline(always)]
     pub fn buffer(&self) -> &'_ BufferData {
         &self.buffer
@@ -110,101 +88,109 @@ impl Controller {
         &mut self.buffer
     }
 
+    #[allow(unused)]
     #[inline(always)]
     pub fn info_motor(&self) -> &'_ InfoMotor {
         &self.info
     }
-    #[inline(always)]
-    pub fn paths(&self) -> &'_ DynoPaths {
-        &self.paths
-    }
-    #[inline(always)]
-    #[allow(unused)]
-    pub fn config(&self) -> &'_ CoreConfig {
-        &self.config
-    }
-    #[inline(always)]
-    pub fn app_options(&self) -> eframe::NativeOptions {
-        self.config.app_options.main_window_opt()
-    }
-    #[inline(always)]
-    pub fn option_show_startup(&self) -> Option<eframe::NativeOptions> {
-        if self.config.show_startup {
-            return Some(self.config.app_options.startup_opt());
-        }
-        None
-    }
 }
 
-impl Controller {
+impl DynoControl {
     #[inline]
     #[allow(unused)]
-    fn setting_generic(&mut self, ui: &mut Ui) -> Response {
-        ui.vertical(|ui| {
-            CollapsingHeader::new("✒ Paths")
-                .default_open(true)
-                .show(ui, |ui| {
-                    ui.add(TextEdit::singleline(&mut self.paths.name).hint_text("app dir name"));
-                    ui.separator();
-                    ui.checkbox(&mut self.edit_path, "Edit Paths Config");
-                    self.paths.draw(ui, self.edit_path);
-                });
-            ui.separator();
-            CollapsingHeader::new(" Configurations")
-                .default_open(true)
-                .show(ui, |ui| {
-                    ui.checkbox(&mut self.config.show_startup, "Show Startup Window");
-                    ui.separator();
-                    self.config.app_options.ui(ui);
-                });
-        })
-        .response
+    fn setting_generic(
+        &mut self,
+        ui: &mut Ui,
+        paths: &mut DynoPaths,
+        config: &mut CoreConfig,
+    ) -> Response {
+        ScrollArea::vertical()
+            .id_source("dyno_setting_info")
+            .show(ui, |scr_ui| {
+                let resp = CollapsingHeader::new("✒ Paths")
+                    .default_open(true)
+                    .show(scr_ui, |ui| {
+                        ui.add(TextEdit::singleline(&mut paths.name).hint_text("app dir name"));
+                        ui.separator();
+                        ui.checkbox(&mut self.edit_path, "Edit Paths Config");
+                        paths.draw(ui, self.edit_path);
+                    })
+                    .header_response;
+                scr_ui.separator();
+                resp.union(
+                    CollapsingHeader::new(" Configurations")
+                        .default_open(true)
+                        .show(scr_ui, |ui| {
+                            ui.checkbox(&mut config.show_startup, "Show Startup Window");
+                            ui.separator();
+                            config.app_options.ui(ui);
+                        })
+                        .header_response,
+                )
+            })
+            .inner
     }
 
     #[inline]
     #[allow(unused)]
     fn setting_info(&mut self, ui: &mut Ui) -> Response {
-        ui.vertical(|ui| {
-            ui.heading("Info Setting");
-            self.show_status(ui);
-            ui.separator();
-            ui.add(TextEdit::singleline(&mut self.info.name).hint_text("isi nama motor"));
-            ui.separator();
-            ui.add(
-                DragValue::new(&mut self.info.cc)
-                    .speed(1)
-                    .prefix("Volume Cilinder: ")
-                    .suffix(" cc")
-                    .min_decimals(10)
-                    .max_decimals(30),
-            );
-            ui.separator();
-            ui.selectable_value_from_iter(
-                &mut self.info.cylinder,
-                infomotor::Cylinder::into_iter(),
-            );
-            ui.separator();
-            ui.selectable_value_from_iter(&mut self.info.stroke, infomotor::Stroke::into_iter());
-            ui.separator();
-            ui.selectable_value_from_iter(
-                &mut self.info.transmition,
-                infomotor::Transmition::into_iter(),
-            );
-            ui.separator();
-            ui.add(
-                DragValue::new(&mut self.info.tire_diameter)
-                    .speed(1)
-                    .prefix("Diameter Ban: ")
-                    .suffix(" inch")
-                    .min_decimals(10)
-                    .max_decimals(50),
-            );
-        })
-        .response
+        ScrollArea::vertical()
+            .id_source("dyno_setting_info")
+            .show(ui, |scr_ui| {
+                let resp = scr_ui.heading("Info Setting");
+                scr_ui.separator();
+                scr_ui.horizontal_wrapped(|horzui| {
+                    horzui
+                        .add(TextEdit::singleline(&mut self.info.name).hint_text("isi nama motor"));
+                    horzui.separator();
+                    horzui.add(
+                        DragValue::new(&mut self.info.cc)
+                            .speed(1)
+                            .prefix("Volume Cilinder: ")
+                            .suffix(" cc")
+                            .min_decimals(10)
+                            .max_decimals(30),
+                    );
+                });
+                scr_ui.separator();
+                scr_ui.horizontal_wrapped(|horzui| {
+                    horzui.selectable_value_from_iter(
+                        &mut self.info.cylinder,
+                        infomotor::Cylinder::into_iter(),
+                    );
+                    horzui.separator();
+                    horzui.selectable_value_from_iter(
+                        &mut self.info.stroke,
+                        infomotor::Stroke::into_iter(),
+                    );
+                    horzui.separator();
+                    horzui.selectable_value_from_iter(
+                        &mut self.info.transmition,
+                        infomotor::Transmition::into_iter(),
+                    );
+                });
+                scr_ui.separator();
+                scr_ui.add(
+                    DragValue::new(&mut self.info.tire_diameter)
+                        .speed(1)
+                        .prefix("Diameter Ban: ")
+                        .suffix(" inch")
+                        .min_decimals(10)
+                        .max_decimals(50),
+                );
+                resp
+            })
+            .inner
     }
 
     #[allow(unused)]
-    pub fn show_setting(&mut self, ctx: &Context, show: &mut bool) {
+    pub fn show_setting(
+        &mut self,
+        ctx: &Context,
+        show: &mut bool,
+        paths: &mut DynoPaths,
+        config: &mut CoreConfig,
+    ) {
         let setting_window = |ui: &mut Ui| {
             ui.vertical_centered_justified(|ui| {
                 ui.horizontal(|ui| {
@@ -216,15 +202,18 @@ impl Controller {
             });
             ui.separator();
             match self.panel_setting {
-                PanelSetting::Generic => self.setting_generic(ui),
+                PanelSetting::Generic => self.setting_generic(ui, paths, config),
                 PanelSetting::InfoMotor => self.setting_info(ui),
                 PanelSetting::Style => {
-                    ui.vertical_centered_justified(|ui| {
-                        ctx.settings_ui(ui);
-                        ui.separator();
-                        ctx.inspection_ui(ui);
-                    })
-                    .response
+                    ScrollArea::vertical()
+                        .id_source("dyno_setting_style")
+                        .show(ui, |scr_ui| {
+                            ctx.settings_ui(scr_ui);
+                            let resp = scr_ui.separator();
+                            ctx.inspection_ui(scr_ui);
+                            resp
+                        })
+                        .inner
                 }
             }
         };
@@ -238,7 +227,7 @@ impl Controller {
 }
 
 // ----------- DRAWER --------------
-impl Controller {
+impl DynoControl {
     pub fn show_status(&self, ui: &mut Ui) {
         match self.service {
             Some(ref serial) => {
@@ -268,18 +257,18 @@ impl Controller {
         }
         ui.separator();
         ui.small(format!("Active Info: {}", self.info));
-        ui.separator();
     }
 }
 
-impl Controller {
+impl DynoControl {
     #[allow(unused)]
+    #[inline(always)]
     pub fn show_plot(&self, ui: &mut Ui) -> Response {
-        MultiRealtimePlot::new().ui(ui, &self.buffer, &self.info)
+        MultiRealtimePlot::new().animate(true).ui(ui, &self.buffer)
     }
 }
 
-impl Controller {
+impl DynoControl {
     #[inline]
     fn saves(&mut self, types: FileType, file: PathBuf) -> DynoResult<Option<PathBuf>> {
         match types {
@@ -290,8 +279,12 @@ impl Controller {
         };
         Ok(Some(file))
     }
-    pub fn on_save(&mut self, tp: FileType) -> DynoResult<Option<PathBuf>> {
-        let dirpath = tp.path(self.paths.get_data_dir_folder("Saved"));
+    pub fn on_save(
+        &mut self,
+        tp: FileType,
+        dirpath: impl AsRef<Path>,
+    ) -> DynoResult<Option<PathBuf>> {
+        let dirpath = dirpath.as_ref();
         match tp {
             FileType::All => match DynoFileManager::pick_all_type(dirpath) {
                 Some(file) => match file.extension().map(|osstr| osstr.to_str().unwrap_or("")) {
@@ -327,8 +320,12 @@ impl Controller {
         };
         Ok(Some(file))
     }
-    pub fn on_open(&mut self, tp: FileType) -> DynoResult<Option<PathBuf>> {
-        let dirpath = tp.path(self.paths.get_data_dir_folder("Saved"));
+    pub fn on_open(
+        &mut self,
+        tp: FileType,
+        dirpath: impl AsRef<Path>,
+    ) -> DynoResult<Option<PathBuf>> {
+        let dirpath = dirpath.as_ref();
         match tp {
             FileType::All => match DynoFileManager::pick_all_type(dirpath) {
                 Some(file) => match file.extension().map(|osstr| osstr.to_str().unwrap_or("")) {
@@ -356,21 +353,17 @@ impl Controller {
 
     #[inline]
     pub fn popup_unsaved() -> ButtonKind {
-        const POPUP_BUTTONS_UNSAVED_WARN: [(ButtonKind, &'_ str); 3] = [
-            (ButtonKind::Ok, "click 'Ok' to save the unsaved data"),
-            (ButtonKind::No, "click 'No', to ignore the warning"),
-            (ButtonKind::Cancel, "click 'Cancel', to cancel"),
-        ];
-        PopupWindow::new(
-            "Unsaved DynoTest!",
-            "Do you want to save the Tests?\n",
-            POPUP_BUTTONS_UNSAVED_WARN,
-        )
-        .set_level(PopupLevel::Warning)
-        .show()
+        if !dynotest_app::msg_dialog_warn!(
+            OkCancel => ["Save the project", "Cancel the Warning"],
+            "Unsaved Project Buffer",
+            "cause: unsave project buffer"
+        ) {
+            return ButtonKind::Cancel;
+        }
+        ButtonKind::Ok
     }
 }
-impl AsRef<Controller> for Controller {
+impl AsRef<DynoControl> for DynoControl {
     #[inline(always)]
     fn as_ref(&self) -> &Self {
         self

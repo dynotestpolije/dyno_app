@@ -41,6 +41,9 @@ pub struct Condition {
     show_help: bool,
     show_about: bool,
     show_config: bool,
+    show_bottom_panel: bool,
+    show_left_panel: bool,
+    show_logger_window: bool,
     buffer_saved: bool,
     confirm_reload: bool,
     confirm_quit: bool,
@@ -55,6 +58,9 @@ impl Default for Condition {
             show_help: false,
             show_about: false,
             show_config: false,
+            show_logger_window: false,
+            show_bottom_panel: true,
+            show_left_panel: true,
             buffer_saved: false,
             confirm_reload: false,
             confirm_quit: false,
@@ -69,7 +75,7 @@ macro_rules! impl_cond_and {
             paste!($(
                 #[allow(unused)]
                 #[inline(always)]
-                pub fn [<$name _and>](&mut self, callback: impl FnOnce(&mut $tp) -> ()) {
+                pub fn [<$name _and>](&mut self, callback: impl FnOnce(&mut $tp)) {
                     if self.$name == $def {
                         return;
                     }
@@ -113,14 +119,17 @@ macro_rules! impl_cond_all {
 }
 
 impl_cond_all!(
-    operator: OperatorData => OperatorData::Noop,
-    show_help: bool => true,
-    show_about: bool => true,
-    show_config: bool => true,
-    buffer_saved: bool => true,
-    confirm_quit: bool => true,
-    confirm_reload: bool => true,
-    allow_close: bool => true
+    operator            : OperatorData => OperatorData::Noop,
+    show_help           : bool => true,
+    show_about          : bool => true,
+    show_config         : bool => true,
+    show_left_panel     : bool => true,
+    show_logger_window  : bool => false,
+    show_bottom_panel   : bool => true,
+    buffer_saved        : bool => true,
+    confirm_quit        : bool => true,
+    confirm_reload      : bool => true,
+    allow_close         : bool => true
 );
 
 impl Condition {
@@ -165,6 +174,10 @@ impl Condition {
             if menu_ui.button("Quit").clicked() {
                 self.confirm_quit = !self.confirm_quit;
             }
+        });
+        ui.menu_button("View", |submenu_ui| {
+            submenu_ui.checkbox(&mut self.show_bottom_panel, "Bottom Panel");
+            submenu_ui.checkbox(&mut self.show_left_panel, "Left Panel");
         });
         if ui.button("Config").clicked() {
             self.show_config = !self.show_config;

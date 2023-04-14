@@ -130,7 +130,15 @@ impl<T> MsgDialogUnwrap<T> for DynoResult<'_, T> {
     where
         T: Default,
     {
-        self.msg_dialog_unwrap(name).unwrap_or_default()
+        match self {
+            Ok(k) => k,
+            Err(err) => {
+                if msg_dialog_err!(Ok => ["Ignore the Error", ""], name, "{err}") {
+                    Default::default()
+                }
+                Default::default()
+            }
+        }
     }
     #[inline(always)]
     fn msg_dialog_map(self, name: &'static str) -> Option<T> {

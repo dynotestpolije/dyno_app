@@ -97,9 +97,16 @@ pub fn show_help(ctx: &Context, open: &mut bool) {
     todo!()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfirmOption {
+    Def,
+    Yes,
+    No,
+}
+
 #[inline(always)]
-pub fn confirm_quit(ctx: &Context, open: &mut bool) -> bool {
-    let mut ret_value = false;
+pub fn confirm_quit(ctx: &Context, open: &mut bool) -> ConfirmOption {
+    let mut ret_value = ConfirmOption::Def;
     let painter = ctx.layer_painter(eframe::egui::LayerId::new(
         eframe::egui::Order::Background,
         eframe::egui::Id::new("confirmation_quit"),
@@ -112,18 +119,17 @@ pub fn confirm_quit(ctx: &Context, open: &mut bool) -> bool {
     let horiz = |ui: &mut eframe::egui::Ui| {
         ui.horizontal(|ui| {
             if ui.button("Yes").clicked() {
-                *open = false;
-                ret_value = true;
+                ret_value = ConfirmOption::Yes;
             }
             if ui.button("No").clicked() {
-                *open = false;
-                ret_value = false;
+                ret_value = ConfirmOption::No;
             }
         })
     };
 
     eframe::egui::Window::new("Do you want to quit?")
         .anchor(Align2::CENTER_CENTER, [-50f32, 0f32])
+        .open(open)
         .collapsible(false)
         .resizable(false)
         .show(ctx, horiz);

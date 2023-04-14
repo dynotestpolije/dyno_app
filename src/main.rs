@@ -1,38 +1,56 @@
+// #![warn(clippy::all, rust_2018_idioms)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 mod app;
 mod condition;
-mod controller;
+mod control;
 mod startup;
 
-use dynotest_app::{msg_dialog_err, types::log, widgets::msgdialog::MsgDialogUnwrap, PACKAGE_INFO};
+use dynotest_app::{
+    config::CoreConfig, msg_dialog_err, paths::DynoPaths, types::log,
+    widgets::msgdialog::MsgDialogUnwrap, PACKAGE_INFO,
+};
 use eframe::AppCreator;
 
-use crate::{app::Applications, controller::Controller};
+fn main() {
+    let paths = match DynoPaths::new(crate::PACKAGE_INFO.app_name) {
+        Ok(p) => p,
+        Err(err) => {
+            if !crate::msg_dialog_err!(
+                OkIgnore => ["Quit the Application", "Ignore the error and continue the Application"],
+                "Error Initializing Path Config",
+                "cause: {err}"
+            ) {
+                dyno_types::log::error!("Quiting Application From error; {err}");
+                std::process::exit(0);
+            }
+            DynoPaths::default()
+        }
+    };
+    let config = paths
+        .get_config::<CoreConfig>("config.toml")
+        .unwrap_or_default();
 
-fn main() -> () {
-    let controller = Controller::new();
-    let log_dir = controller.paths().get_cache_dir_file("logs/log.log");
-    let _log_handle = dynotest_app::init_logger(log_dir).msg_dialog_map("Initialize Error!");
-    log::info!("Done Initialize Applciation");
+    let log_dir = paths.get_cache_dir_file("logs/log.log");
+    dynotest_app::init_logger(log_dir).msg_dialog_unwrap_default("Failed Initialize Logger!");
 
-    if let Some(opt) = controller.option_show_startup() {
+    if config.show_startup {
+        let opt = config.app_options.startup_opt();
         show_startup_window(opt);
     }
 
     log::info!("Running Main Windows App");
-    let main_opt = controller.app_options();
-    let main_app_creator: AppCreator = Box::new(|cc| Applications::new(cc, controller));
+    let opt = config.app_options.main_window_opt();
+    let app_creator: AppCreator = Box::new(|cc| app::Applications::new(cc, paths, config));
 
-    if let Err(err) = eframe::run_native(PACKAGE_INFO.app_name, main_opt, main_app_creator) {
-        let return_dialog = dynotest_app::msg_dialog_err!(
+    if let Err(err) = eframe::run_native(PACKAGE_INFO.app_name, opt, app_creator) {
+        log::error!("Failed to run app eframe in native - {err}");
+        if !dynotest_app::msg_dialog_err!(
             OkReport => ["Ignore the Error and close the Application", "Report the error to Developer"],
             "ERROR Running Applications",
             "Failed to running the aplication because: {err}"
-        );
-
-        if !return_dialog {
-            todo!("report error from dialog")
+        ) {
+            todo!("Reporting Error")
         }
     }
 }
@@ -44,13 +62,12 @@ fn show_startup_window(native_opt: eframe::NativeOptions) {
         native_opt,
         Box::new(|cc| startup::StartupWindow::new(cc)),
     ) {
-        let return_dialog = dynotest_app::msg_dialog_err!(
+        if !dynotest_app::msg_dialog_err!(
             OkReport => ["Ignore the Error", "Report the error to Developer"],
             "ERROR Running Startup Window Applications",
             "Failed to running the aplication because: {err}"
-        );
-        if !return_dialog {
-            todo!("report error from dialog")
+        ) {
+            todo!("Reporting Error")
         }
     }
 }
