@@ -215,7 +215,7 @@ impl GaugeTypes {
                 needle_color: Color32::from_rgb(0, 204, 255),
                 foreground_color: Color32::from_rgb(85, 221, 255),
                 min: 0f32,
-                max: 15f32,
+                max: 150f32,
                 min_degree: 0f32,
                 max_degree: 270f32,
             },

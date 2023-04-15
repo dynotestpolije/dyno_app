@@ -79,7 +79,8 @@ impl<const BTN_SIZE: usize> PopupWindow<BTN_SIZE> {
         {
             let native_options = NativeOptions {
                 initial_window_size: Some(Vec2 { x: 300.0, y: 300.0 }),
-                min_window_size: Some(Vec2 { x: 300.0, y: 300.0 }),
+                resizable: true,
+                always_on_top: true,
                 icon_data: option_icon.as_ref().map(|(i, _)| i.clone()),
                 ..Default::default()
             };

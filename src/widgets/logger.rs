@@ -1,7 +1,11 @@
+use std::fs;
 use std::{env, path::PathBuf};
 
 use dyno_types::{log::Level, RECORDS_LOGGER};
-use eframe::{egui, epaint::Color32};
+use eframe::{
+    egui::{widgets, Align, Context, Layout, ScrollArea, Ui, Window},
+    epaint::Color32,
+};
 use itertools::Itertools;
 
 use super::{button::ButtonExt, DynoWidgets};
@@ -49,7 +53,7 @@ impl Default for LoggerUi {
 }
 
 impl LoggerUi {
-    pub fn ui(&mut self, ui: &mut eframe::egui::Ui) {
+    pub fn ui(&mut self, ui: &mut Ui) {
         let Ok(mut logs) = RECORDS_LOGGER.lock() else {
             return;
         };
@@ -82,7 +86,7 @@ impl LoggerUi {
 
         ui.horizontal(|ui| {
             ui.label("Max Log output");
-            ui.add(egui::widgets::DragValue::new(&mut self.max_log_length).speed(1));
+            ui.add(widgets::DragValue::new(&mut self.max_log_length).speed(1));
         });
 
         ui.horizontal(|ui| {
@@ -94,16 +98,16 @@ impl LoggerUi {
 
         let mut logs_displayed: usize = 0;
 
-        egui::ScrollArea::vertical()
+        ScrollArea::vertical()
             .auto_shrink([false, true])
             .max_height(ui.available_height() - 30.0)
             .stick_to_bottom(true)
             .show(ui, |ui| {
                 logs.iter()
                     .filter(|(l, s)| {
-                        self.loglevels[*l as usize - 1]
-                            && self.search_term.is_empty()
-                            && self.match_string(s)
+                        !self.search_term.is_empty()
+                            && !self.match_string(s)
+                            && !(self.loglevels[*l as usize - 1])
                     })
                     .for_each(|(lvl, s)| {
                         ui.colored_label(level_color(*lvl), s);
@@ -114,7 +118,7 @@ impl LoggerUi {
         ui.horizontal(|ui| {
             ui.label(format!("Log size: {}", logs.len()));
             ui.label(format!("Displayed: {}", logs_displayed));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 #[allow(deprecated)]
                 if ui.save_button().clicked() {
                     let homedir = env::home_dir().unwrap_or(PathBuf::from("/temp"));
@@ -124,8 +128,18 @@ impl LoggerUi {
                         homedir,
                         &[("logfile", &["log", "log.log", "dlog"])],
                     ) {
-                        std::fs::write(file, logs.iter().map(|(_, s)| s).join("\n")).ok();
+                        if let Err(err) = fs::write(&file, logs.iter().map(|(_, s)| s).join("\n")) {
+                            dyno_types::log::error!(
+                                "Failed to write to file '{}' - {err}",
+                                file.display()
+                            );
+                        }
                     }
+                }
+                if ui.button("Copy").clicked() {
+                    ui.output_mut(|o| {
+                        o.copied_text = logs.iter().map(|(_, s)| s).join("\n");
+                    });
                 }
             });
         });
@@ -147,11 +161,17 @@ impl LoggerUi {
 /// Draws the logger ui
 /// has to be called after [`init()`](init());
 #[inline(always)]
-pub fn logger_ui(ctx: &egui::Context) {
+pub fn logger_ui(ctx: &Context, open: &mut bool) {
+    if !*open {
+        return;
+    }
     if let Ok(mut uilog) = LOGGER_UI.lock() {
-        egui::Window::new("Dyno Log Window")
+        Window::new("Dyno Log Window")
+            .open(open)
             .resizable(true)
             .id("dyno_log_window".into())
             .show(ctx, |ui| uilog.ui(ui));
+    } else {
+        dyno_types::log::warn!("Failed to lock the LOGGER_UI Mutex");
     }
 }

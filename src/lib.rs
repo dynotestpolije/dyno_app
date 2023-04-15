@@ -8,6 +8,27 @@ pub mod window;
 pub use constant::*;
 pub use dyno_types as types;
 
+#[allow(dead_code)]
+pub enum PanelId {
+    Top,
+    Bottom,
+    Left,
+    Right,
+    Center,
+}
+
+impl From<PanelId> for eframe::egui::Id {
+    fn from(value: PanelId) -> Self {
+        match value {
+            PanelId::Top => eframe::egui::Id::new("E3221406_dynotest_top_panel"),
+            PanelId::Bottom => eframe::egui::Id::new("E3221406_dynotest_bottom_panel"),
+            PanelId::Left => eframe::egui::Id::new("E3221406_dynotest_left_panel"),
+            PanelId::Right => eframe::egui::Id::new("E3221406_dynotest_right_panel"),
+            PanelId::Center => eframe::egui::Id::new("E3221406_central_panel"),
+        }
+    }
+}
+
 pub fn init_logger<'err>(file: impl AsRef<std::path::Path>) -> types::DynoResult<'err, ()> {
     let builder = types::LoggerBuilder::new()
         .set_file(file.as_ref().to_path_buf())

@@ -1,6 +1,9 @@
 #![allow(unused)]
 
-use crate::{widgets::DynoWidgets, PACKAGE_INFO};
+use crate::{
+    widgets::{button::ButtonExt, logger, DynoWidgets},
+    PACKAGE_INFO,
+};
 use eframe::egui::{Align2, Context, Vec2, Window};
 
 #[inline]
@@ -89,24 +92,24 @@ pub fn show_about(ctx: &Context, open: &mut bool) {
         });
 }
 
-pub fn show_config(ctx: &Context, open: &mut bool) {
-    todo!()
+#[inline]
+pub fn show_logger(ctx: &Context, open: &mut bool) {
+    logger::logger_ui(ctx, open)
 }
 
+#[inline]
 pub fn show_help(ctx: &Context, open: &mut bool) {
-    todo!()
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConfirmOption {
-    Def,
-    Yes,
-    No,
+    if !*open {
+        return;
+    }
+    todo!("implement `show_help` window")
 }
 
 #[inline(always)]
-pub fn confirm_quit(ctx: &Context, open: &mut bool) -> ConfirmOption {
-    let mut ret_value = ConfirmOption::Def;
+pub fn confirm_quit(ctx: &Context) -> crate::widgets::button::ButtonKind {
+    use crate::widgets::button::ButtonKind;
+    let mut btn = ButtonKind::Any;
+
     let painter = ctx.layer_painter(eframe::egui::LayerId::new(
         eframe::egui::Order::Background,
         eframe::egui::Id::new("confirmation_quit"),
@@ -118,21 +121,21 @@ pub fn confirm_quit(ctx: &Context, open: &mut bool) -> ConfirmOption {
     );
     let horiz = |ui: &mut eframe::egui::Ui| {
         ui.horizontal(|ui| {
-            if ui.button("Yes").clicked() {
-                ret_value = ConfirmOption::Yes;
+            if ui.ok_button().clicked() {
+                btn = ButtonKind::Ok;
             }
-            if ui.button("No").clicked() {
-                ret_value = ConfirmOption::No;
+            if ui.cancel_button().clicked() {
+                btn = ButtonKind::Cancel;
             }
         })
     };
 
     eframe::egui::Window::new("Do you want to quit?")
-        .anchor(Align2::CENTER_CENTER, [-50f32, 0f32])
-        .open(open)
+        .fixed_size(Vec2::new(300., 300.))
+        .anchor(Align2::CENTER_CENTER, Vec2::new(-150.0, 150.0))
         .collapsible(false)
         .resizable(false)
         .show(ctx, horiz);
 
-    ret_value
+    btn
 }

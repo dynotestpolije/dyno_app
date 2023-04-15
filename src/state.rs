@@ -35,7 +35,7 @@ pub enum OperatorData {
 }
 
 #[derive(Clone, Copy, serde::Deserialize, serde::Serialize)]
-pub struct Condition {
+pub struct AppState {
     operator: OperatorData,
 
     show_help: bool,
@@ -51,7 +51,7 @@ pub struct Condition {
     allow_close: bool,
 }
 
-impl Default for Condition {
+impl Default for AppState {
     fn default() -> Self {
         Self {
             operator: OperatorData::Noop,
@@ -61,7 +61,7 @@ impl Default for Condition {
             show_logger_window: false,
             show_bottom_panel: true,
             show_left_panel: true,
-            buffer_saved: false,
+            buffer_saved: true,
             confirm_reload: false,
             confirm_quit: false,
             allow_close: false,
@@ -71,7 +71,7 @@ impl Default for Condition {
 
 macro_rules! impl_cond_and {
     ($($name:ident: $tp:ty => $def:expr),*) => {
-        impl Condition {
+        impl AppState {
             paste!($(
                 #[allow(unused)]
                 #[inline(always)]
@@ -87,17 +87,17 @@ macro_rules! impl_cond_and {
 }
 macro_rules! impl_cond_setter_getter {
     ($($name:ident: $tp:ty => $def:expr),*) => {
-        impl Condition {
+        impl AppState {
             paste!($(
                 #[allow(unused)]
                 #[inline(always)]
-                pub fn [<get_ $name>](&self) -> $tp {
+                pub fn $name(&self) -> $tp {
                     self.$name
                 }
 
                 #[allow(unused)]
                 #[inline(always)]
-                pub fn [<get_ $name _mut>](&mut self) -> &mut $tp {
+                pub fn [<$name _mut>](&mut self) -> &mut $tp {
                     &mut self.$name
                 }
 
@@ -132,60 +132,75 @@ impl_cond_all!(
     allow_close         : bool => true
 );
 
-impl Condition {
+impl AppState {
     pub fn new() -> Self {
         Self::default()
     }
 
     #[inline]
     pub fn menubar(&mut self, ui: &mut eframe::egui::Ui) {
+        use dyno_types::log as LOG;
         ui.menu_button("File", |menu_ui| {
             if menu_ui.open_button().clicked() {
+                LOG::info!("Open Button menu clicked");
                 self.operator = OperatorData::OpenFile(FileType::Binaries);
             }
             menu_ui.menu_button("Open As..", |submenu_ui| {
                 if submenu_ui.button("Csv File").clicked() {
                     self.operator = OperatorData::OpenFile(FileType::Csv);
+                    LOG::info!("Open as Csv file submenu clicked");
                 }
                 if submenu_ui.button("Excel File").clicked() {
                     self.operator = OperatorData::OpenFile(FileType::Excel);
+                    LOG::info!("Open as Excel file submenu clicked");
                 }
                 if submenu_ui.button("Binaries File").clicked() {
                     self.operator = OperatorData::OpenFile(FileType::Binaries);
+                    LOG::info!("Open as Binaries file submenu clicked");
                 }
             });
             if menu_ui.save_button().clicked() {
+                LOG::info!("Save file menu clicked");
                 self.operator = OperatorData::SaveFile(FileType::Binaries);
             }
             menu_ui.menu_button("Save As..", |submenu_ui| {
                 if submenu_ui.button("Csv File").clicked() {
+                    LOG::info!("Save as Csv file submenu clicked");
                     self.operator = OperatorData::SaveFile(FileType::Csv);
                 }
                 if submenu_ui.button("Excel File").clicked() {
+                    LOG::info!("Save as Excel file submenu clicked");
                     self.operator = OperatorData::SaveFile(FileType::Excel);
                 }
                 if submenu_ui.button("Binaries File").clicked() {
+                    LOG::info!("Save as Binaries file submenu clicked");
                     self.operator = OperatorData::SaveFile(FileType::Binaries);
                 }
             });
             if menu_ui.button("Reload").clicked() {
+                LOG::info!("Reload submenu clicked");
                 self.confirm_reload = !self.confirm_reload;
             }
             if menu_ui.button("Quit").clicked() {
+                LOG::info!("Exit submenu clicked");
                 self.confirm_quit = !self.confirm_quit;
             }
         });
         ui.menu_button("View", |submenu_ui| {
             submenu_ui.checkbox(&mut self.show_bottom_panel, "Bottom Panel");
             submenu_ui.checkbox(&mut self.show_left_panel, "Left Panel");
+            submenu_ui.checkbox(&mut self.show_logger_window, "Logger Window");
         });
         if ui.button("Config").clicked() {
+            LOG::info!("Config submenu clicked");
             self.show_config = !self.show_config;
         }
         if ui.button("Help").clicked() {
+            LOG::info!("Help submenu clicked");
             self.show_config = !self.show_config;
         }
         if ui.button("About").clicked() {
+            LOG::info!("About submenu clicked");
             self.show_about = !self.show_about;
         }
     }

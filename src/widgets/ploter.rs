@@ -1,3 +1,4 @@
+use eframe::egui::plot::{LineStyle, LinkedAxisGroup, LinkedCursorsGroup, PlotPoints};
 use eframe::egui::{plot, ComboBox, Response, TextStyle, Ui};
 use std::ops::RangeInclusive;
 
@@ -5,15 +6,19 @@ use std::ops::RangeInclusive;
 // }
 
 pub struct MultiRealtimePlot {
+    line_style: LineStyle,
+    group: LinkedAxisGroup,
+    cursor_group: LinkedCursorsGroup,
     coordinates: bool,
     animates: bool,
-    line_style: plot::LineStyle,
 }
 
 impl Default for MultiRealtimePlot {
     fn default() -> Self {
         Self {
             line_style: plot::LineStyle::Solid,
+            group: plot::LinkedAxisGroup::new(true, false),
+            cursor_group: plot::LinkedCursorsGroup::new(true, false),
             animates: false,
             coordinates: true,
         }
@@ -92,19 +97,17 @@ impl MultiRealtimePlot {
         let show_line_callback = |pui: &mut plot::PlotUi, range: RangeInclusive<usize>| {
             range
                 .map(|index| {
-                    plot::Line::new(data.get_points::<plot::PlotPoints>(index))
+                    plot::Line::new(data[index].into_points::<PlotPoints>())
                         .style(Self::style_byidx(index))
                         .name(BufferData::BUFFER_NAME[index])
                 })
                 .for_each(|line| pui.line(line))
         };
         ui.vertical_centered_justified(|ui| {
-            let spacing = ui.spacing().item_spacing.y;
-            let height = ui.available_height() * 0.5 - (spacing * 2.0);
+            let height = ui.available_height() * 0.5 - (ui.spacing().item_spacing.y * 2.0);
             let first = self.first_plot_io(ui, height, show_line_callback);
             ui.separator();
             let second = self.second_plot_ui(ui, height, show_line_callback);
-
             first.union(second)
         })
         .response
@@ -118,9 +121,9 @@ impl MultiRealtimePlot {
             .legend(Self::LEGENDS)
             .height(height)
             .x_axis_formatter(Self::x_axis_fmt)
-            .allow_drag(false)
-            .allow_scroll(false)
-            .allow_boxed_zoom(false)
+            .link_axis(self.group.clone())
+            .link_cursor(self.cursor_group.clone())
+            .view_aspect(2.0)
             .coordinates_formatter(
                 plot::Corner::LeftBottom,
                 plot::CoordinatesFormatter::with_decimals(2),
@@ -137,9 +140,9 @@ impl MultiRealtimePlot {
             .legend(Self::LEGENDS)
             .x_axis_formatter(Self::x_axis_fmt)
             .height(height)
-            .allow_drag(false)
-            .allow_scroll(false)
-            .allow_boxed_zoom(false)
+            .link_axis(self.group.clone())
+            .link_cursor(self.cursor_group.clone())
+            .view_aspect(2.0)
             .coordinates_formatter(
                 plot::Corner::LeftBottom,
                 plot::CoordinatesFormatter::with_decimals(2),

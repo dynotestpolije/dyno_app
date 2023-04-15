@@ -112,6 +112,9 @@ pub trait DynoWidgets: button::ButtonExt + Sized {
     ) -> eframe::egui::Response
     where
         W: Into<eframe::egui::WidgetText>;
+
+    fn toggle(&mut self, on: &mut bool) -> eframe::egui::Response;
+    fn toggle_compact(&mut self, on: &mut bool) -> eframe::egui::Response;
 }
 
 impl DynoWidgets for eframe::egui::Ui {
@@ -331,6 +334,61 @@ impl DynoWidgets for eframe::egui::Ui {
             .unwrap_or_else(|| {
                 self.colored_label(self.style().visuals.error_fg_color, "\u{1F525} No items")
             })
+    }
+
+    fn toggle(&mut self, on: &mut bool) -> eframe::egui::Response {
+        let desired_size = self.spacing().interact_size.y * eframe::egui::vec2(2.0, 1.0);
+        let (rect, mut response) =
+            self.allocate_exact_size(desired_size, eframe::egui::Sense::click());
+        if response.clicked() {
+            *on = !*on;
+            response.mark_changed(); // report back that the value changed
+        }
+        response.widget_info(|| {
+            eframe::egui::WidgetInfo::selected(eframe::egui::WidgetType::Checkbox, *on, "")
+        });
+        if self.is_rect_visible(rect) {
+            let how_on = self.ctx().animate_bool(response.id, *on);
+            let visuals = self.style().interact_selectable(&response, *on);
+            let rect = rect.expand(visuals.expansion);
+            let radius = 0.5 * rect.height();
+            self.painter()
+                .rect(rect, radius, visuals.bg_fill, visuals.bg_stroke);
+            let circle_x =
+                eframe::egui::lerp((rect.left() + radius)..=(rect.right() - radius), how_on);
+            let center = eframe::egui::pos2(circle_x, rect.center().y);
+            self.painter()
+                .circle(center, 0.75 * radius, visuals.bg_fill, visuals.fg_stroke);
+        }
+        response
+    }
+    fn toggle_compact(&mut self, on: &mut bool) -> eframe::egui::Response {
+        let desired_size = self.spacing().interact_size.y * eframe::egui::vec2(2.0, 1.0);
+        let (rect, mut response) =
+            self.allocate_exact_size(desired_size, eframe::egui::Sense::click());
+        if response.clicked() {
+            *on = !*on;
+            response.mark_changed();
+        }
+        response.widget_info(|| {
+            eframe::egui::WidgetInfo::selected(eframe::egui::WidgetType::Checkbox, *on, "")
+        });
+
+        if self.is_rect_visible(rect) {
+            let how_on = self.ctx().animate_bool(response.id, *on);
+            let visuals = self.style().interact_selectable(&response, *on);
+            let rect = rect.expand(visuals.expansion);
+            let radius = 0.5 * rect.height();
+            self.painter()
+                .rect(rect, radius, visuals.bg_fill, visuals.bg_stroke);
+            let circle_x =
+                eframe::egui::lerp((rect.left() + radius)..=(rect.right() - radius), how_on);
+            let center = eframe::egui::pos2(circle_x, rect.center().y);
+            self.painter()
+                .circle(center, 0.75 * radius, visuals.bg_fill, visuals.fg_stroke);
+        }
+
+        response
     }
 }
 

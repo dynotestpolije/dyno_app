@@ -16,7 +16,7 @@ use dynotest_app::{
 };
 use eframe::egui::*;
 
-use crate::condition::FileType;
+use crate::state::FileType;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Default)]
@@ -83,9 +83,15 @@ impl DynoControl {
     pub fn buffer(&self) -> &'_ BufferData {
         &self.buffer
     }
+
     #[inline(always)]
     pub fn buffer_mut(&mut self) -> &'_ mut BufferData {
         &mut self.buffer
+    }
+
+    #[inline(always)]
+    pub fn buffer_empty(&self) -> bool {
+        self.buffer.is_empty()
     }
 
     #[allow(unused)]
@@ -187,42 +193,45 @@ impl DynoControl {
     pub fn show_setting(
         &mut self,
         ctx: &Context,
-        show: &mut bool,
+        open: &mut bool,
         paths: &mut DynoPaths,
         config: &mut CoreConfig,
     ) {
-        let setting_window = |ui: &mut Ui| {
-            ui.vertical_centered_justified(|ui| {
-                ui.horizontal(|ui| {
-                    use PanelSetting::*;
-                    ui.selectable_value(&mut self.panel_setting, Generic, stringify!(Generic));
-                    ui.selectable_value(&mut self.panel_setting, InfoMotor, stringify!(InfoMotor));
-                    ui.selectable_value(&mut self.panel_setting, Style, stringify!(Style));
-                });
-            });
-            ui.separator();
-            match self.panel_setting {
-                PanelSetting::Generic => self.setting_generic(ui, paths, config),
-                PanelSetting::InfoMotor => self.setting_info(ui),
-                PanelSetting::Style => {
-                    ScrollArea::vertical()
-                        .id_source("dyno_setting_style")
-                        .show(ui, |scr_ui| {
-                            ctx.settings_ui(scr_ui);
-                            let resp = scr_ui.separator();
-                            ctx.inspection_ui(scr_ui);
-                            resp
-                        })
-                        .inner
-                }
-            }
-        };
         Window::new("Dyno Control Settings")
             .id(Id::new("id_control_setting"))
-            .open(show)
+            .open(open)
             .collapsible(false)
             .resizable(true)
-            .show(ctx, setting_window);
+            .show(ctx, |ui| {
+                ui.vertical_centered_justified(|ui| {
+                    ui.horizontal(|ui| {
+                        use PanelSetting::*;
+                        ui.selectable_value(&mut self.panel_setting, Generic, stringify!(Generic));
+                        ui.selectable_value(
+                            &mut self.panel_setting,
+                            InfoMotor,
+                            stringify!(InfoMotor),
+                        );
+                        ui.selectable_value(&mut self.panel_setting, Style, stringify!(Style));
+                    });
+                });
+                ui.separator();
+                match self.panel_setting {
+                    PanelSetting::Generic => self.setting_generic(ui, paths, config),
+                    PanelSetting::InfoMotor => self.setting_info(ui),
+                    PanelSetting::Style => {
+                        ScrollArea::vertical()
+                            .id_source("dyno_setting_style")
+                            .show(ui, |scr_ui| {
+                                ctx.settings_ui(scr_ui);
+                                let resp = scr_ui.separator();
+                                ctx.inspection_ui(scr_ui);
+                                resp
+                            })
+                            .inner
+                    }
+                }
+            });
     }
 }
 
@@ -352,15 +361,41 @@ impl DynoControl {
     }
 
     #[inline]
-    pub fn popup_unsaved() -> ButtonKind {
-        if !dynotest_app::msg_dialog_warn!(
-            OkCancel => ["Save the project", "Cancel the Warning"],
-            "Unsaved Project Buffer",
-            "cause: unsave project buffer"
-        ) {
-            return ButtonKind::Cancel;
+    pub fn popup_unsaved(ctx: &Context, saved: bool) -> ButtonKind {
+        if saved {
+            return ButtonKind::No;
         }
-        ButtonKind::Ok
+        let mut btn = ButtonKind::Any;
+        let painter = ctx.layer_painter(eframe::egui::LayerId::new(
+            eframe::egui::Order::Background,
+            eframe::egui::Id::new("confirmation_popup_unsaved"),
+        ));
+        painter.rect_filled(
+            ctx.input(|inp| inp.screen_rect()),
+            0.0,
+            eframe::egui::Color32::from_black_alpha(192),
+        );
+
+        eframe::egui::Window::new("Do you want to quit?")
+            .fixed_size(Vec2::new(300., 300.))
+            .anchor(Align2::CENTER_CENTER, Vec2::new(-150.0, 150.0))
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.horizontal(|horz_ui| {
+                    if horz_ui.save_button().clicked() {
+                        btn = ButtonKind::Save;
+                    }
+                    if horz_ui.no_button().clicked() {
+                        btn = ButtonKind::No;
+                    }
+                    if horz_ui.cancel_button().clicked() {
+                        btn = ButtonKind::Cancel;
+                    }
+                })
+            });
+
+        btn
     }
 }
 impl AsRef<DynoControl> for DynoControl {

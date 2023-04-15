@@ -2,9 +2,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 mod app;
-mod condition;
 mod control;
+mod debug;
 mod startup;
+mod state;
 
 use dynotest_app::{
     config::CoreConfig, msg_dialog_err, paths::DynoPaths, types::log,
@@ -38,7 +39,6 @@ fn main() {
         let opt = config.app_options.startup_opt();
         show_startup_window(opt);
     }
-
     log::info!("Running Main Windows App");
     let opt = config.app_options.main_window_opt();
     let app_creator: AppCreator = Box::new(|cc| app::Applications::new(cc, paths, config));
@@ -50,7 +50,7 @@ fn main() {
             "ERROR Running Applications",
             "Failed to running the aplication because: {err}"
         ) {
-            todo!("Reporting Error")
+            log::warn!("ERROR: TODO! report the error from run native");
         }
     }
 }
