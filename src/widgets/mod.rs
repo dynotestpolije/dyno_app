@@ -2,7 +2,6 @@ pub mod button;
 pub mod gauges;
 pub mod hyperlink;
 pub mod images;
-pub mod logger;
 pub mod msgdialog;
 pub mod popup;
 pub mod toast;

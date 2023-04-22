@@ -257,15 +257,11 @@ impl Toasts {
 
     /// Adds new toast to the collection.
     /// By default adds toast at the end of the list, can be changed with `self.reverse`.
-    pub fn add(&mut self, toast: Toast) -> &mut Toast {
-        if self.reverse {
-            self.toasts.insert(0, toast);
-            return self.toasts.get_mut(0).unwrap();
-        } else {
-            self.toasts.push(toast);
-            let l = self.toasts.len() - 1;
-            return self.toasts.get_mut(l).unwrap();
+    pub fn add(&mut self, toast: Toast) {
+        if !self.reverse {
+            return self.toasts.push(toast);
         }
+        self.toasts.insert(0, toast);
     }
 
     /// Dismisses the oldest toast
@@ -290,33 +286,33 @@ impl Toasts {
     }
 
     /// Shortcut for adding a toast with info `success`.
-    pub fn success(&mut self, caption: impl ToString) -> &mut Toast {
+    pub fn success(&mut self, caption: impl ToString) {
         self.add(Toast::success(caption))
     }
 
     /// Shortcut for adding a toast with info `level`.
-    pub fn info(&mut self, caption: impl ToString) -> &mut Toast {
+    pub fn info(&mut self, caption: impl ToString) {
         let caption = caption.to_string();
         dyno_types::log::info!("{}", &caption);
         self.add(Toast::info(caption))
     }
 
     /// Shortcut for adding a toast with warning `level`.
-    pub fn warning(&mut self, caption: impl ToString) -> &mut Toast {
+    pub fn warning(&mut self, caption: impl ToString) {
         let caption = caption.to_string();
         dyno_types::log::warn!("{}", &caption);
         self.add(Toast::warning(caption))
     }
 
     /// Shortcut for adding a toast with error `level`.
-    pub fn error(&mut self, caption: impl ToString) -> &mut Toast {
+    pub fn error(&mut self, caption: impl ToString) {
         let caption = caption.to_string();
         dyno_types::log::error!("{}", &caption);
         self.add(Toast::error(caption))
     }
 
     /// Shortcut for adding a toast with no level.
-    pub fn basic(&mut self, caption: impl ToString) -> &mut Toast {
+    pub fn basic(&mut self, caption: impl ToString) {
         self.add(Toast::basic(caption))
     }
 
@@ -372,7 +368,7 @@ impl Toasts {
         let mut dismiss = None;
 
         // Remove disappeared toasts
-        toasts.retain(|t| !t.state.disappeared());
+        toasts.retain(|toast| !toast.state.disappeared());
 
         // Start disappearing expired toasts
         toasts.iter_mut().for_each(|t| {

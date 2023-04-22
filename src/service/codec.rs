@@ -1,8 +1,10 @@
-use std::{io::ErrorKind, sync::Arc};
+use std::{
+    io::ErrorKind,
+    sync::{Arc, Mutex},
+};
 
 use bytes::{Buf, BytesMut};
 use dyno_types::{DynoErr, DynoResult, SerialData};
-use eframe::epaint::mutex::Mutex;
 use serialport::SerialPort;
 
 pub const MAX_BUFFER_SIZE: usize = 1024;
@@ -29,7 +31,10 @@ impl Codec {
         let mut buffer = [0u8; MAX_BUFFER_SIZE];
 
         let size_read = {
-            let mut lock = self.serial.lock();
+            let mut lock = self
+                .serial
+                .lock()
+                .map_err(|err| format!("Failed lock the serial - {err}"))?;
             lock.read(&mut buffer[..])
         };
 

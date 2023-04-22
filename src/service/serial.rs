@@ -2,13 +2,12 @@
 
 use super::{codec::Codec, CmdMsg, PortInfo};
 use dyno_types::{DynoErr, DynoResult, ResultHandler, SerialData};
-use eframe::egui::epaint::mutex::Mutex;
 use serialport::SerialPort;
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::{channel, Receiver},
-        Arc,
+        Arc, Mutex,
     },
     thread::JoinHandle,
     time::Duration,
@@ -26,7 +25,7 @@ enum SerialFlag {
 #[derive(Clone)]
 pub struct SerialService {
     serial: Arc<Mutex<Box<dyn SerialPort>>>,
-    info: Arc<PortInfo>,
+    info: PortInfo,
     rx: Arc<Receiver<SerialData>>,
     running_flag: Arc<AtomicBool>,
 }
@@ -35,9 +34,9 @@ impl SerialService {
     const BAUD_RATE: u32 = 500_000;
     pub fn new<'err>() -> DynoResult<'err, Self> {
         let (_, rx) = channel();
-        let info = Arc::new(super::get_dyno_port()?.ok_or(DynoErr::service_error(
+        let info = super::get_dyno_port()?.ok_or(DynoErr::service_error(
             "Failed to get port info, there is no port available in this machine",
-        ))?);
+        ))?;
         let serial = Arc::new(Mutex::new(
             serialport::new(&info.port_name, Self::BAUD_RATE)
                 .timeout(Duration::from_millis(300))
@@ -108,6 +107,9 @@ impl SerialService {
 
     #[inline(always)]
     pub fn send(&self, cmd: CmdMsg) -> DynoResult<()> {
-        self.serial.lock().write_all(cmd.as_bytes()).dyn_err()
+        match self.serial.lock() {
+            Ok(mut ser) => ser.write_all(cmd.as_bytes()).dyn_err(),
+            Err(_) => Err(DynoErr::noop()),
+        }
     }
 }

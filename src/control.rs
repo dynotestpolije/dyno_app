@@ -1,22 +1,21 @@
-use std::path::{Path, PathBuf};
-
-use dyno_types::{
-    data_buffer::{BufferData, Data},
-    infomotor::{self, InfoMotor},
-    DynoResult,
-};
-use dynotest_app::{
-    config::CoreConfig,
+use crate::{
+    config::DynoConfig,
     paths::DynoPaths,
     service::{self, PortInfo, SerialService},
-    widgets::{
-        button::{ButtonExt, ButtonKind},
-        DynoFileManager, DynoWidgets, MultiRealtimePlot,
-    },
+    widgets::{button::ButtonExt, DynoFileManager, MultiRealtimePlot},
+};
+use dyno_types::{
+    data_buffer::{BufferData, Data},
+    infomotor::InfoMotor,
+    DynoResult,
 };
 use eframe::egui::*;
+use std::{
+    path::PathBuf,
+    sync::{Arc, RwLock},
+};
 
-use crate::state::FileType;
+use crate::state::DynoFileType;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Default)]
@@ -27,7 +26,7 @@ enum PanelSetting {
     Style,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 pub struct DynoControl {
     #[serde(skip)]
     #[serde(default)]
@@ -37,20 +36,41 @@ pub struct DynoControl {
     #[serde(default)]
     buffer: BufferData,
 
-    info: InfoMotor,
+    paths: Arc<RwLock<DynoPaths>>,
+    config: Arc<RwLock<DynoConfig>>,
+    info: Arc<RwLock<InfoMotor>>,
     panel_setting: PanelSetting,
     edit_path: bool,
-    show_setting_ui: bool,
 }
 impl Default for DynoControl {
     fn default() -> Self {
+        let paths = match DynoPaths::new(crate::PACKAGE_INFO.app_name) {
+            Ok(p) => p,
+            Err(err) => {
+                if !crate::msg_dialog_err!(
+                    OkIgnore => ["Quit the Application", "Ignore the error and continue the Application"],
+                    "Error Initializing Path Config",
+                    "cause: {err}"
+                ) {
+                    dyno_types::log::error!("Quiting Application From error; {err}");
+                    std::process::exit(0);
+                }
+                DynoPaths::default()
+            }
+        };
+        let config = Arc::new(RwLock::new(
+            paths
+                .get_config::<DynoConfig>("config.toml")
+                .unwrap_or_default(),
+        ));
         Self {
+            config,
+            paths: Arc::new(RwLock::new(paths)),
+            info: Arc::new(RwLock::new(InfoMotor::new())),
             service: None,
             buffer: BufferData::new(),
-            info: InfoMotor::new(),
             panel_setting: PanelSetting::Generic,
             edit_path: false,
-            show_setting_ui: false,
         }
     }
 }
@@ -68,7 +88,10 @@ impl DynoControl {
     #[inline]
     pub fn on_pos_render(&mut self) {
         if let Some(Ok(serial_data)) = self.service.as_mut().map(|x| x.handle()) {
-            let data = Data::from_serial(&self.info, serial_data);
+            let Ok(info) = self.info.read() else {
+                return;
+            };
+            let data = Data::from_serial(&info, serial_data);
             self.buffer.push_data(data);
         }
     }
@@ -96,142 +119,17 @@ impl DynoControl {
 
     #[allow(unused)]
     #[inline(always)]
-    pub fn info_motor(&self) -> &'_ InfoMotor {
+    pub fn info_motor(&self) -> &Arc<RwLock<InfoMotor>> {
         &self.info
     }
-}
-
-impl DynoControl {
-    #[inline]
-    #[allow(unused)]
-    fn setting_generic(
-        &mut self,
-        ui: &mut Ui,
-        paths: &mut DynoPaths,
-        config: &mut CoreConfig,
-    ) -> Response {
-        ScrollArea::vertical()
-            .id_source("dyno_setting_info")
-            .show(ui, |scr_ui| {
-                let resp = CollapsingHeader::new("✒ Paths")
-                    .default_open(true)
-                    .show(scr_ui, |ui| {
-                        ui.add(TextEdit::singleline(&mut paths.name).hint_text("app dir name"));
-                        ui.separator();
-                        ui.checkbox(&mut self.edit_path, "Edit Paths Config");
-                        paths.draw(ui, self.edit_path);
-                    })
-                    .header_response;
-                scr_ui.separator();
-                resp.union(
-                    CollapsingHeader::new(" Configurations")
-                        .default_open(true)
-                        .show(scr_ui, |ui| {
-                            ui.checkbox(&mut config.show_startup, "Show Startup Window");
-                            ui.separator();
-                            config.app_options.ui(ui);
-                        })
-                        .header_response,
-                )
-            })
-            .inner
-    }
 
     #[inline]
-    #[allow(unused)]
-    fn setting_info(&mut self, ui: &mut Ui) -> Response {
-        ScrollArea::vertical()
-            .id_source("dyno_setting_info")
-            .show(ui, |scr_ui| {
-                let resp = scr_ui.heading("Info Setting");
-                scr_ui.separator();
-                scr_ui.horizontal_wrapped(|horzui| {
-                    horzui
-                        .add(TextEdit::singleline(&mut self.info.name).hint_text("isi nama motor"));
-                    horzui.separator();
-                    horzui.add(
-                        DragValue::new(&mut self.info.cc)
-                            .speed(1)
-                            .prefix("Volume Cilinder: ")
-                            .suffix(" cc")
-                            .min_decimals(10)
-                            .max_decimals(30),
-                    );
-                });
-                scr_ui.separator();
-                scr_ui.horizontal_wrapped(|horzui| {
-                    horzui.selectable_value_from_iter(
-                        &mut self.info.cylinder,
-                        infomotor::Cylinder::into_iter(),
-                    );
-                    horzui.separator();
-                    horzui.selectable_value_from_iter(
-                        &mut self.info.stroke,
-                        infomotor::Stroke::into_iter(),
-                    );
-                    horzui.separator();
-                    horzui.selectable_value_from_iter(
-                        &mut self.info.transmition,
-                        infomotor::Transmition::into_iter(),
-                    );
-                });
-                scr_ui.separator();
-                scr_ui.add(
-                    DragValue::new(&mut self.info.tire_diameter)
-                        .speed(1)
-                        .prefix("Diameter Ban: ")
-                        .suffix(" inch")
-                        .min_decimals(10)
-                        .max_decimals(50),
-                );
-                resp
-            })
-            .inner
+    pub fn paths(&self) -> &Arc<RwLock<DynoPaths>> {
+        &self.paths
     }
-
-    #[allow(unused)]
-    pub fn show_setting(
-        &mut self,
-        ctx: &Context,
-        open: &mut bool,
-        paths: &mut DynoPaths,
-        config: &mut CoreConfig,
-    ) {
-        Window::new("Dyno Control Settings")
-            .id(Id::new("id_control_setting"))
-            .open(open)
-            .collapsible(false)
-            .resizable(true)
-            .show(ctx, |ui| {
-                ui.vertical_centered_justified(|ui| {
-                    ui.horizontal(|ui| {
-                        use PanelSetting::*;
-                        ui.selectable_value(&mut self.panel_setting, Generic, stringify!(Generic));
-                        ui.selectable_value(
-                            &mut self.panel_setting,
-                            InfoMotor,
-                            stringify!(InfoMotor),
-                        );
-                        ui.selectable_value(&mut self.panel_setting, Style, stringify!(Style));
-                    });
-                });
-                ui.separator();
-                match self.panel_setting {
-                    PanelSetting::Generic => self.setting_generic(ui, paths, config),
-                    PanelSetting::InfoMotor => self.setting_info(ui),
-                    PanelSetting::Style => {
-                        ScrollArea::vertical()
-                            .id_source("dyno_setting_style")
-                            .show(ui, |scr_ui| {
-                                ctx.settings_ui(scr_ui);
-                                let resp = scr_ui.separator();
-                                ctx.inspection_ui(scr_ui);
-                                resp
-                            })
-                            .inner
-                    }
-                }
-            });
+    #[inline]
+    pub fn config(&self) -> &Arc<RwLock<DynoConfig>> {
+        &self.config
     }
 }
 
@@ -265,7 +163,9 @@ impl DynoControl {
             }
         }
         ui.separator();
-        ui.small(format!("Active Info: {}", self.info));
+        if let Ok(info) = self.info.read() {
+            ui.small(format!("Active Info: {}", info));
+        }
     }
 }
 
@@ -279,123 +179,87 @@ impl DynoControl {
 
 impl DynoControl {
     #[inline]
-    fn saves(&mut self, types: FileType, file: PathBuf) -> DynoResult<Option<PathBuf>> {
+    fn saves(&mut self, types: DynoFileType, file: PathBuf) -> DynoResult<Option<PathBuf>> {
         match types {
-            FileType::Binaries => self.buffer.serialize_to_file(&file)?,
-            FileType::Csv => self.buffer.save_as_csv(&file)?,
-            FileType::Excel => self.buffer.save_as_excel(&file)?,
+            DynoFileType::Binaries => self.buffer.serialize_to_file(&file)?,
+            DynoFileType::Csv => self.buffer.save_as_csv(&file)?,
+            DynoFileType::Excel => self.buffer.save_as_excel(&file)?,
             _ => (),
         };
         Ok(Some(file))
     }
-    pub fn on_save(
-        &mut self,
-        tp: FileType,
-        dirpath: impl AsRef<Path>,
-    ) -> DynoResult<Option<PathBuf>> {
-        let dirpath = dirpath.as_ref();
+    pub fn on_save(&mut self, tp: DynoFileType) -> DynoResult<Option<PathBuf>> {
+        let dirpath = {
+            let Ok(path_manager) = self.paths.read() else {
+                return Err(From::from("ERROR on reading/lock RwLock of path_manager"));
+            };
+            tp.path(path_manager.get_data_dir_folder("Saved"))
+        };
         match tp {
-            FileType::All => match DynoFileManager::pick_all_type(dirpath) {
+            DynoFileType::All => match DynoFileManager::pick_all_type(dirpath) {
                 Some(file) => match file.extension().map(|osstr| osstr.to_str().unwrap_or("")) {
-                    Some("bin") | Some("dbin") => self.saves(FileType::Binaries, file),
-                    Some("csv") | Some("dynocsv") => self.saves(FileType::Csv, file),
-                    Some("xlsx") => self.saves(FileType::Excel, file),
+                    Some("bin") | Some("dbin") => self.saves(DynoFileType::Binaries, file),
+                    Some("csv") | Some("dynocsv") => self.saves(DynoFileType::Csv, file),
+                    Some("xlsx") => self.saves(DynoFileType::Excel, file),
                     _ => Ok(None),
                 },
                 None => Ok(None),
             },
-            FileType::Binaries => match DynoFileManager::pick_binaries(dirpath) {
+            DynoFileType::Binaries => match DynoFileManager::pick_binaries(dirpath) {
                 Some(file) => self.saves(tp, file),
                 None => Ok(None),
             },
-            FileType::Csv => match DynoFileManager::pick_csv(dirpath) {
+            DynoFileType::Csv => match DynoFileManager::pick_csv(dirpath) {
                 Some(file) => self.saves(tp, file),
                 None => Ok(None),
             },
-            FileType::Excel => match DynoFileManager::pick_excel(dirpath) {
+            DynoFileType::Excel => match DynoFileManager::pick_excel(dirpath) {
                 Some(file) => self.saves(tp, file),
                 None => Ok(None),
             },
         }
     }
 
-    fn opens(&mut self, types: FileType, file: PathBuf) -> DynoResult<Option<PathBuf>> {
+    fn opens(&mut self, types: DynoFileType, file: PathBuf) -> DynoResult<Option<PathBuf>> {
         self.buffer.clean();
         self.buffer = match types {
-            FileType::Binaries => BufferData::deserialize_from_file(&file)?,
-            FileType::Csv => BufferData::open_from_csv(&file)?,
-            FileType::Excel => BufferData::open_from_excel(&file)?,
+            DynoFileType::Binaries => BufferData::deserialize_from_file(&file)?,
+            DynoFileType::Csv => BufferData::open_from_csv(&file)?,
+            DynoFileType::Excel => BufferData::open_from_excel(&file)?,
             _ => return Ok(None),
         };
         Ok(Some(file))
     }
-    pub fn on_open(
-        &mut self,
-        tp: FileType,
-        dirpath: impl AsRef<Path>,
-    ) -> DynoResult<Option<PathBuf>> {
-        let dirpath = dirpath.as_ref();
+    pub fn on_open(&mut self, tp: DynoFileType) -> DynoResult<Option<PathBuf>> {
+        let dirpath = {
+            let Ok(path_manager) = self.paths.read() else {
+                return Err(From::from("ERROR on reading/lock RwLock of path_manager"));
+            };
+            tp.path(path_manager.get_data_dir_folder("Saved"))
+        };
         match tp {
-            FileType::All => match DynoFileManager::pick_all_type(dirpath) {
+            DynoFileType::All => match DynoFileManager::pick_all_type(dirpath) {
                 Some(file) => match file.extension().map(|osstr| osstr.to_str().unwrap_or("")) {
-                    Some("bin") | Some("dbin") => self.opens(FileType::Binaries, file),
-                    Some("csv") | Some("dynocsv") => self.opens(FileType::Csv, file),
-                    Some("xlsx") => self.opens(FileType::Excel, file),
+                    Some("bin") | Some("dbin") => self.opens(DynoFileType::Binaries, file),
+                    Some("csv") | Some("dynocsv") => self.opens(DynoFileType::Csv, file),
+                    Some("xlsx") => self.opens(DynoFileType::Excel, file),
                     _ => Ok(None),
                 },
                 None => Ok(None),
             },
-            FileType::Binaries => match DynoFileManager::pick_binaries(dirpath) {
+            DynoFileType::Binaries => match DynoFileManager::pick_binaries(dirpath) {
                 Some(file) => self.opens(tp, file),
                 None => Ok(None),
             },
-            FileType::Csv => match DynoFileManager::pick_csv(dirpath) {
+            DynoFileType::Csv => match DynoFileManager::pick_csv(dirpath) {
                 Some(file) => self.opens(tp, file),
                 None => Ok(None),
             },
-            FileType::Excel => match DynoFileManager::pick_excel(dirpath) {
+            DynoFileType::Excel => match DynoFileManager::pick_excel(dirpath) {
                 Some(file) => self.opens(tp, file),
                 None => Ok(None),
             },
         }
-    }
-
-    #[inline]
-    pub fn popup_unsaved(ctx: &Context, saved: bool) -> ButtonKind {
-        if saved {
-            return ButtonKind::No;
-        }
-        let mut btn = ButtonKind::Any;
-        let painter = ctx.layer_painter(eframe::egui::LayerId::new(
-            eframe::egui::Order::Background,
-            eframe::egui::Id::new("confirmation_popup_unsaved"),
-        ));
-        painter.rect_filled(
-            ctx.input(|inp| inp.screen_rect()),
-            0.0,
-            eframe::egui::Color32::from_black_alpha(192),
-        );
-
-        eframe::egui::Window::new("Do you want to quit?")
-            .fixed_size(Vec2::new(300., 300.))
-            .anchor(Align2::CENTER_CENTER, Vec2::new(-150.0, 150.0))
-            .collapsible(false)
-            .resizable(false)
-            .show(ctx, |ui| {
-                ui.horizontal(|horz_ui| {
-                    if horz_ui.save_button().clicked() {
-                        btn = ButtonKind::Save;
-                    }
-                    if horz_ui.no_button().clicked() {
-                        btn = ButtonKind::No;
-                    }
-                    if horz_ui.cancel_button().clicked() {
-                        btn = ButtonKind::Cancel;
-                    }
-                })
-            });
-
-        btn
     }
 }
 impl AsRef<DynoControl> for DynoControl {

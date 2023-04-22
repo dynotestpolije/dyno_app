@@ -1,10 +1,14 @@
 mod constant;
 
+pub mod app;
 pub mod config;
+pub mod control;
 pub mod paths;
 pub mod service;
+pub mod state;
 pub mod widgets;
-pub mod window;
+pub mod windows;
+
 pub use constant::*;
 pub use dyno_types as types;
 

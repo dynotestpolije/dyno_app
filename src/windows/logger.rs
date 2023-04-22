@@ -1,18 +1,14 @@
 use std::fs;
 use std::{env, path::PathBuf};
 
-use dyno_types::{log::Level, RECORDS_LOGGER};
 use eframe::{
     egui::{widgets, Align, Context, Layout, ScrollArea, Ui, Window},
     epaint::Color32,
 };
 use itertools::Itertools;
 
-use super::{button::ButtonExt, DynoWidgets};
-
-lazy_static::lazy_static! {
-    static ref LOGGER_UI: std::sync::Mutex<LoggerUi> = Default::default();
-}
+use crate::widgets::{button::ButtonExt, DynoFileManager, DynoWidgets};
+use dyno_types::{log::Level, RECORDS_LOGGER};
 
 const SIZE_LEVEL: usize = Level::Trace as usize;
 const LEVELS: [Level; SIZE_LEVEL] = [
@@ -34,14 +30,15 @@ pub const fn level_color(lvl: Level) -> Color32 {
     }
 }
 
-struct LoggerUi {
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LoggerWindow {
     loglevels: [bool; SIZE_LEVEL],
     search_term: String,
     search_case_sensitive: bool,
     max_log_length: usize,
 }
 
-impl Default for LoggerUi {
+impl Default for LoggerWindow {
     fn default() -> Self {
         Self {
             loglevels: [false; SIZE_LEVEL],
@@ -52,7 +49,10 @@ impl Default for LoggerUi {
     }
 }
 
-impl LoggerUi {
+impl LoggerWindow {
+    pub fn new() -> Self {
+        Self::default()
+    }
     pub fn ui(&mut self, ui: &mut Ui) {
         let Ok(mut logs) = RECORDS_LOGGER.lock() else {
             return;
@@ -122,7 +122,7 @@ impl LoggerUi {
                 #[allow(deprecated)]
                 if ui.save_button().clicked() {
                     let homedir = env::home_dir().unwrap_or(PathBuf::from("/temp"));
-                    if let Some(file) = super::DynoFileManager::save_file(
+                    if let Some(file) = DynoFileManager::save_file(
                         "Saving Log File",
                         "gui_log",
                         homedir,
@@ -159,19 +159,17 @@ impl LoggerUi {
 }
 
 /// Draws the logger ui
-/// has to be called after [`init()`](init());
-#[inline(always)]
-pub fn logger_ui(ctx: &Context, open: &mut bool) {
-    if !*open {
-        return;
-    }
-    if let Ok(mut uilog) = LOGGER_UI.lock() {
+impl super::WindowState for LoggerWindow {
+    fn show_window(
+        &mut self,
+        ctx: &Context,
+        _frame: &mut eframe::Frame,
+        state: &mut crate::state::DynoState,
+    ) {
         Window::new("Dyno Log Window")
-            .open(open)
+            .open(state.show_logger_window_mut())
             .resizable(true)
             .id("dyno_log_window".into())
-            .show(ctx, |ui| uilog.ui(ui));
-    } else {
-        dyno_types::log::warn!("Failed to lock the LOGGER_UI Mutex");
+            .show(ctx, |ui| self.ui(ui));
     }
 }

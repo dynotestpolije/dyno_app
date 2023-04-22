@@ -3,7 +3,7 @@
 use dyno_types::{DynoErr, DynoResult};
 use serialport::{SerialPortInfo, SerialPortType::UsbPort, UsbPortInfo};
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PortInfo {
     pub port_name: String,
     pub vid: u16,

@@ -7,16 +7,21 @@ use crate::{assets::ICO_LOGO, open_option_icon, widgets::DynoWidgets};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Serialize, Deserialize)]
-pub struct CoreConfig {
+pub struct DynoConfig {
     pub app_options: AppOptions,
     pub show_startup: bool,
 }
 
-impl CoreConfig {
+impl DynoConfig {
     pub fn check_is_changed(&mut self, other: &Self) {
         if !self.app_options.eq(&other.app_options) && self.show_startup != other.show_startup {
             *self = other.clone();
         }
+    }
+    pub fn draw(&mut self, ui: &mut eframe::egui::Ui) {
+        ui.checkbox(&mut self.show_startup, "Show Startup Window");
+        ui.separator();
+        self.app_options.ui(ui);
     }
 }
 

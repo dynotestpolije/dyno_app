@@ -1,44 +1,40 @@
 use crate::{
     control::DynoControl,
-    state::{AppState, FileType, OperatorData},
+    state::{DynoState, OperatorData},
+    widgets::{gauges::Gauges, segment_display, toast::Toasts},
+    windows::{window_states_new, WindowState},
+    PanelId, APP_KEY,
 };
 use dyno_types::{data_buffer::Data, Numeric};
-use dynotest_app::{
-    config::CoreConfig,
-    paths::DynoPaths,
-    widgets::{button::ButtonKind, gauges::Gauges, segment_display, toast::Toasts},
-    window, PanelId, APP_KEY, PACKAGE_INFO,
-};
 use eframe::egui::*;
 
 #[derive(serde::Deserialize, serde::Serialize)]
+#[serde(default)]
 pub struct Applications {
-    name: String,
-    paths: DynoPaths,
     control: DynoControl,
-    config: CoreConfig,
 
     #[serde(skip)]
-    #[serde(default)]
-    state: AppState,
+    window_states: Vec<Box<dyn WindowState>>,
 
     #[serde(skip)]
-    #[serde(default)]
     toast: Toasts,
 
-    #[cfg_attr(debug_assertions, serde(skip), serde(default))]
-    debug: crate::debug::DebugAction,
+    state: DynoState,
+
+    #[cfg_attr(debug_assertions, serde(skip))]
+    debug: crate::windows::DebugAction,
 }
 
 impl Default for Applications {
     fn default() -> Self {
+        let control = DynoControl::default();
         Self {
-            paths: Default::default(),
-            config: Default::default(),
-            name: PACKAGE_INFO.app_name.to_string(),
+            window_states: window_states_new(&control),
             control: DynoControl::new(),
             toast: Default::default(),
-            state: AppState::new(),
+            state: DynoState::new(),
+
+            #[cfg(debug_assertions)]
             debug: Default::default(),
         }
     }
@@ -48,16 +44,17 @@ impl Applications {
     #[allow(clippy::new_ret_no_self)]
     pub fn new(
         cc: &eframe::CreationContext<'_>,
-        paths: DynoPaths,
-        config: CoreConfig,
+        control: DynoControl,
     ) -> Box<dyn eframe::App + 'static> {
-        let mut slf = cc
-            .storage
-            .and_then(|s| eframe::get_value::<Self>(s, APP_KEY))
-            .unwrap_or_default();
-        slf.config.check_is_changed(&config);
-        slf.paths.check_is_changed(&paths);
-        Box::new(slf)
+        Box::new(
+            cc.storage
+                .and_then(|s| eframe::get_value::<Self>(s, APP_KEY))
+                .unwrap_or_else(|| Self {
+                    window_states: window_states_new(&control),
+                    control,
+                    ..Default::default()
+                }),
+        )
     }
 }
 
@@ -110,7 +107,9 @@ impl Applications {
             right_ui.separator();
             self.control.show_plot(right_ui);
         };
+
         let width = ctx.available_rect().width();
+
         TopBottomPanel::top(PanelId::Top).show(ctx, |ui| {
             menu::bar(ui, |uibar| {
                 widgets::global_dark_light_mode_switch(uibar);
@@ -118,6 +117,7 @@ impl Applications {
                 self.state.menubar(uibar)
             })
         });
+
         TopBottomPanel::bottom(PanelId::Bottom).show_animated(
             ctx,
             self.state.show_bottom_panel(),
@@ -127,6 +127,7 @@ impl Applications {
                 });
             },
         );
+
         SidePanel::left(PanelId::Left)
             .min_width(width * 0.3)
             .max_width(width * 0.5)
@@ -134,51 +135,9 @@ impl Applications {
         CentralPanel::default().show(ctx, uigroup_column_right);
     }
     #[inline]
-    fn windows_draw(&mut self, ctx: &Context, frame: &mut eframe::Frame) {
-        if cfg!(debug_assertions) {
-            self.debug.draw(ctx, self.control.buffer_mut());
-        }
-        window::show_logger(ctx, self.state.show_logger_window_mut());
-        window::show_about(ctx, self.state.show_about_mut());
-        window::show_help(ctx, self.state.show_help_mut());
-        self.control.show_setting(
-            ctx,
-            self.state.show_config_mut(),
-            &mut self.paths,
-            &mut self.config,
-        );
-
-        if self.state.confirm_quit() {
-            match DynoControl::popup_unsaved(ctx, self.state.buffer_saved()) {
-                ButtonKind::No => match window::confirm_quit(ctx) {
-                    ButtonKind::Ok => {
-                        self.state.set_confirm_quit(false);
-                        self.state.set_allow_close(true);
-                        frame.close();
-                    }
-                    ButtonKind::No => {
-                        self.state.set_confirm_quit(false);
-                        self.state.set_allow_close(false);
-                    }
-                    _ => {}
-                },
-                ButtonKind::Cancel => {
-                    self.state.set_confirm_quit(false);
-                    self.state.set_confirm_reload(false);
-                }
-                ButtonKind::Save => self
-                    .state
-                    .set_operator(OperatorData::SaveFile(FileType::All)),
-                _ => {}
-            }
-        }
-        self.toast.show(ctx);
-    }
-    #[inline]
-    fn on_conditions(&mut self, ctx: &Context) {
-        let mut save_buffer = |tp: FileType| {
-            let dirpath = tp.path(self.paths.get_data_dir_folder("Saved"));
-            match self.control.on_save(tp, &dirpath) {
+    fn on_conditions(&mut self) {
+        match self.state.get_operator() {
+            OperatorData::SaveFile(tp) => match self.control.on_save(tp) {
                 Ok(Some(path)) => {
                     self.toast
                         .info(format!("Saved {} file: {}", tp.as_str(), path.display()));
@@ -188,44 +147,19 @@ impl Applications {
                         .error(format!("Error on Saving {}: {err}", tp.as_str()));
                 }
                 _ => {}
-            };
-        };
-
-        match self.state.operator() {
-            OperatorData::Noop => {}
-            OperatorData::SaveFile(tp) => {
-                self.state.set_buffer_saved(true);
-                self.state.set_operator(OperatorData::Noop);
-                save_buffer(tp);
-            }
+            },
             OperatorData::OpenFile(tp) => {
-                match DynoControl::popup_unsaved(ctx, self.state.buffer_saved()) {
-                    ButtonKind::No => {
-                        let dirpath = tp.path(self.paths.get_data_dir_folder("Saved"));
-                        match self.control.on_open(tp, dirpath) {
-                            Ok(p) => {
-                                if let Some(path) = p {
-                                    self.toast.info(format!(
-                                        "Opened {} file: {}",
-                                        tp.as_str(),
-                                        path.display()
-                                    ));
-                                }
-                            }
-                            Err(e) => {
-                                self.toast.error(format!("Failed Opening File: {e}"));
-                            }
-                        }
-                        self.state.set_operator(OperatorData::Noop);
-                    }
-                    ButtonKind::Save => {
-                        self.state.set_buffer_saved(true);
-                        save_buffer(tp);
-                    }
-                    ButtonKind::Cancel => self.state.set_operator(OperatorData::Noop),
-                    _ => {}
+                self.state.set_show_buffer_unsaved(true);
+                match self.control.on_open(tp) {
+                    Ok(p) if p.is_some() => self.toast.info(format!(
+                        "Opened {} file: {}",
+                        tp.as_str(),
+                        p.unwrap().display()
+                    )),
+                    _ => self.toast.error("Failed Opening File"),
                 }
             }
+            _ => {}
         }
     }
 }
@@ -233,11 +167,18 @@ impl Applications {
 impl eframe::App for Applications {
     fn update(&mut self, ctx: &Context, frame: &mut eframe::Frame) {
         let last_data = self.control.last_buffer();
-        self.state.set_buffer_saved(self.control.buffer_empty());
 
-        self.windows_draw(ctx, frame);
+        if cfg!(debug_assertions) {
+            self.debug.show_window(ctx, self.control.buffer_mut());
+        }
+        for window in &mut self.window_states {
+            window.show_window(ctx, frame, &mut self.state)
+        }
+
         self.main_panels_draw(ctx, &last_data);
-        self.on_conditions(ctx);
+        self.on_conditions();
+
+        self.toast.show(ctx);
     }
 
     fn clear_color(&self, visuals: &Visuals) -> [f32; 4] {
@@ -249,11 +190,7 @@ impl eframe::App for Applications {
     }
 
     fn on_close_event(&mut self) -> bool {
-        if self.state.allow_close() {
-            return true;
-        }
-        self.state.set_confirm_quit(true);
-        false
+        self.state.quitable() && (!self.state.show_buffer_unsaved())
     }
 
     fn auto_save_interval(&self) -> std::time::Duration {

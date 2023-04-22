@@ -220,15 +220,18 @@ impl DynoPaths {
         fs::write(file, contents).map_err(From::from)
     }
 
-    pub fn draw(&mut self, ui: &mut eframe::egui::Ui, edit: bool) {
-        use eframe::egui::RichText;
+    pub fn draw(&mut self, ui: &mut eframe::egui::Ui, edit: &mut bool) {
+        use eframe::egui::{RichText, TextEdit};
+        ui.add(TextEdit::singleline(&mut self.name).hint_text("app dir name"));
+        ui.separator();
+        ui.checkbox(edit, "Edit Paths Config");
         let bg_color = ui.style().visuals.extreme_bg_color;
         for i in 0..6 {
             let path = self.index_mut(i);
             ui.separator();
             {
                 let text = RichText::new(format!("{}", path.display())).background_color(bg_color);
-                if ui.link(text).on_hover_text("Left Click to Edit").clicked() && edit {
+                if ui.link(text).on_hover_text("Left Click to Edit").clicked() && *edit {
                     if let Some(p) = DynoFileManager::pick_folder("Change Path", &path) {
                         *path = p;
                     }
