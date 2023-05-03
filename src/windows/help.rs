@@ -8,12 +8,7 @@ impl HelpWindow {
 
 // TODO(rizal_achp): implement help window
 impl super::WindowState for HelpWindow {
-    fn show_window(
-        &mut self,
-        _ctx: &eframe::egui::Context,
-        _frame: &mut eframe::Frame,
-        state: &mut crate::state::DynoState,
-    ) {
+    fn show_window(&mut self, _ctx: &eframe::egui::Context, state: &mut crate::state::DynoState) {
         if !state.show_help() {
             return;
         }

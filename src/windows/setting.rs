@@ -103,12 +103,7 @@ impl SettingWindow {
 }
 
 impl super::WindowState for SettingWindow {
-    fn show_window(
-        &mut self,
-        ctx: &eframe::egui::Context,
-        _frame: &mut eframe::Frame,
-        state: &mut crate::state::DynoState,
-    ) {
+    fn show_window(&mut self, ctx: &eframe::egui::Context, state: &mut crate::state::DynoState) {
         Window::new("Dyno Control Settings")
             .id(Id::new("id_control_setting"))
             .open(state.show_config_mut())

@@ -33,18 +33,18 @@ pub const fn level_color(lvl: Level) -> Color32 {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LoggerWindow {
     loglevels: [bool; SIZE_LEVEL],
-    search_term: String,
-    search_case_sensitive: bool,
-    max_log_length: usize,
+    term: String,
+    case_sensitive: bool,
+    max_log_len: usize,
 }
 
 impl Default for LoggerWindow {
     fn default() -> Self {
         Self {
-            loglevels: [false; SIZE_LEVEL],
-            search_term: String::with_capacity(128),
-            search_case_sensitive: false,
-            max_log_length: 1000,
+            loglevels: [true, true, true, false, false],
+            term: String::with_capacity(128),
+            case_sensitive: false,
+            max_log_len: 1000,
         }
     }
 }
@@ -59,8 +59,8 @@ impl LoggerWindow {
         };
 
         let len_log = logs.len();
-        if len_log > self.max_log_length {
-            logs.drain(..len_log - self.max_log_length);
+        if len_log > self.max_log_len {
+            logs.drain(..len_log - self.max_log_len);
         }
 
         ui.horizontal(|ui| {
@@ -74,19 +74,19 @@ impl LoggerWindow {
 
         ui.horizontal(|ui| {
             ui.label("Search: ");
-            let _response = ui.text_edit_singleline(&mut self.search_term);
+            let _response = ui.text_edit_singleline(&mut self.term);
             if ui
-                .selectable_label(self.search_case_sensitive, "Aa")
+                .selectable_label(self.case_sensitive, "Aa")
                 .on_hover_text("Case sensitive")
                 .clicked()
             {
-                self.search_case_sensitive = !self.search_case_sensitive;
+                self.case_sensitive = !self.case_sensitive;
             };
         });
 
         ui.horizontal(|ui| {
             ui.label("Max Log output");
-            ui.add(widgets::DragValue::new(&mut self.max_log_length).speed(1));
+            ui.add(widgets::DragValue::new(&mut self.max_log_len).speed(1));
         });
 
         ui.horizontal(|ui| {
@@ -102,15 +102,11 @@ impl LoggerWindow {
             .auto_shrink([false, true])
             .max_height(ui.available_height() - 30.0)
             .stick_to_bottom(true)
-            .show(ui, |ui| {
+            .show(ui, |ui_inner| {
                 logs.iter()
-                    .filter(|(l, s)| {
-                        !self.search_term.is_empty()
-                            && !self.match_string(s)
-                            && !(self.loglevels[*l as usize - 1])
-                    })
+                    .filter(|(l, s)| self.match_term(s) && (self.loglevels[*l as usize - 1]))
                     .for_each(|(lvl, s)| {
-                        ui.colored_label(level_color(*lvl), s);
+                        ui_inner.colored_label(level_color(*lvl), s);
                         logs_displayed += 1;
                     });
             });
@@ -137,9 +133,7 @@ impl LoggerWindow {
                     }
                 }
                 if ui.button("Copy").clicked() {
-                    ui.output_mut(|o| {
-                        o.copied_text = logs.iter().map(|(_, s)| s).join("\n");
-                    });
+                    ui.output_mut(|o| o.copied_text = logs.iter().map(|(_, s)| s).join("\n"));
                 }
             });
         });
@@ -148,24 +142,21 @@ impl LoggerWindow {
     }
 
     #[inline]
-    fn match_string(&self, string: &str) -> bool {
-        if !self.search_case_sensitive {
-            return string
-                .to_lowercase()
-                .contains(&self.search_term.to_lowercase());
+    fn match_term(&self, s_term: &str) -> bool {
+        if self.term.is_empty() {
+            return true;
         }
-        string.contains(&self.search_term)
+        if !self.case_sensitive {
+            s_term.to_lowercase().contains(&self.term.to_lowercase())
+        } else {
+            s_term.contains(&self.term)
+        }
     }
 }
 
 /// Draws the logger ui
 impl super::WindowState for LoggerWindow {
-    fn show_window(
-        &mut self,
-        ctx: &Context,
-        _frame: &mut eframe::Frame,
-        state: &mut crate::state::DynoState,
-    ) {
+    fn show_window(&mut self, ctx: &Context, state: &mut crate::state::DynoState) {
         Window::new("Dyno Log Window")
             .open(state.show_logger_window_mut())
             .resizable(true)

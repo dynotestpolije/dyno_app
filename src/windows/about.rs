@@ -5,27 +5,16 @@ use crate::widgets::DynoWidgets;
 use crate::PACKAGE_INFO;
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct AboutWindow {
-    open: bool,
-}
+pub struct AboutWindow;
+
 impl AboutWindow {
     pub fn new() -> Self {
-        AboutWindow::default()
+        Self
     }
 }
 
 impl super::WindowState for AboutWindow {
-    fn show_window(
-        &mut self,
-        ctx: &eframe::egui::Context,
-        _frame: &mut eframe::Frame,
-        state: &mut crate::state::DynoState,
-    ) {
-        let open_about_window = state.show_about();
-        if open_about_window {
-            return;
-        }
-        self.open = open_about_window;
+    fn show_window(&mut self, ctx: &eframe::egui::Context, state: &mut crate::state::DynoState) {
         let uidraw_collapsing = |ui: &mut eframe::egui::Ui| {
             ui.horizontal(|ui| {
                 for (author_name, author_email) in PACKAGE_INFO.authors() {
@@ -75,37 +64,33 @@ impl super::WindowState for AboutWindow {
             };
         };
 
-        let uidraw = |ui: &mut eframe::egui::Ui| {
-            ui.heading(PACKAGE_INFO.name);
-            ui.label(format!("Version {}", PACKAGE_INFO.version));
-
-            ui.separator();
-
-            if let Some(description) = PACKAGE_INFO.description {
-                ui.label(description);
-                ui.separator();
-            }
-
-            ui.horizontal(|ui| {
-                if let Some(homepage) = PACKAGE_INFO.homepage {
-                    ui.hyperlink_with_icon_to("Home page", homepage);
-                }
-                if let Some(repository) = PACKAGE_INFO.repository {
-                    ui.hyperlink_with_icon_to("Repository", repository);
-                }
-            });
-
-            ui.separator();
-
-            ui.collapsing("Authors", uidraw_collapsing);
-        };
-
         Window::new("About")
-            .open(&mut self.open)
+            .open(state.show_about_mut())
             .resizable(false)
             .collapsible(false)
-            .show(ctx, uidraw);
+            .show(ctx, |ui: &mut eframe::egui::Ui| {
+                ui.heading(PACKAGE_INFO.name);
+                ui.label(format!("Version {}", PACKAGE_INFO.version));
 
-        state.set_show_about(self.open);
+                ui.separator();
+
+                if let Some(description) = PACKAGE_INFO.description {
+                    ui.label(description);
+                    ui.separator();
+                }
+
+                ui.horizontal(|ui| {
+                    if let Some(homepage) = PACKAGE_INFO.homepage {
+                        ui.hyperlink_with_icon_to("Home page", homepage);
+                    }
+                    if let Some(repository) = PACKAGE_INFO.repository {
+                        ui.hyperlink_with_icon_to("Repository", repository);
+                    }
+                });
+
+                ui.separator();
+
+                ui.collapsing("Authors", uidraw_collapsing);
+            });
     }
 }
