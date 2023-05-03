@@ -45,7 +45,7 @@ pub fn init_logger<'err>(file: impl AsRef<std::path::Path>) -> types::DynoResult
     } else {
         builder
             .set_max_level(types::log::LevelFilter::Warn)
-            .set_roll_action(types::RollAction::Roll)
+            .set_roll_action(types::FileAction::Roll)
             .build_file_logger()
     }
 }

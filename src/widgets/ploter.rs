@@ -123,7 +123,6 @@ impl MultiRealtimePlot {
             .x_axis_formatter(Self::x_axis_fmt)
             .link_axis(self.group.clone())
             .link_cursor(self.cursor_group.clone())
-            .view_aspect(2.0)
             .coordinates_formatter(
                 plot::Corner::LeftBottom,
                 plot::CoordinatesFormatter::with_decimals(2),
@@ -142,7 +141,6 @@ impl MultiRealtimePlot {
             .height(height)
             .link_axis(self.group.clone())
             .link_cursor(self.cursor_group.clone())
-            .view_aspect(2.0)
             .coordinates_formatter(
                 plot::Corner::LeftBottom,
                 plot::CoordinatesFormatter::with_decimals(2),

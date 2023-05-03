@@ -211,7 +211,7 @@ impl ButtonExt for eframe::egui::Ui {
     #[allow(unused)]
     #[inline(always)]
     fn small_button_ext(&mut self, button_kind: impl ToString) -> Response {
-        self.button(button_kind.to_string())
+        self.small_button(button_kind.to_string())
     }
     #[allow(unused)]
     #[inline(always)]

@@ -44,7 +44,7 @@ impl SegmentedDisplay {
     }
 
     pub fn dyno_seven_segment<S: AsRef<str>>(value: S) -> Self {
-        Self::new(DisplayKind::SixteenSegment).push_string(value)
+        Self::new(DisplayKind::NineSegment).push_string(value)
     }
 
     pub fn push_string<S: AsRef<str>>(mut self, value: S) -> Self {

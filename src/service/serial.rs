@@ -80,7 +80,7 @@ impl SerialService {
             .dyn_err()
     }
 
-    pub fn close(&mut self) {
+    pub fn stop(&mut self) {
         self.running_flag.store(false, Ordering::SeqCst);
         self.send(CmdMsg::Stop).ok();
     }

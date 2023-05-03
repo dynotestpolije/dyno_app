@@ -9,6 +9,12 @@ pub enum DynoFileType {
     Excel,
 }
 
+impl std::fmt::Display for DynoFileType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 impl DynoFileType {
     #[inline(always)]
     pub const fn as_str(self) -> &'static str {
@@ -60,7 +66,12 @@ pub struct DynoState {
     show_logger_window: bool,
     show_buffer_unsaved: bool,
 
+    #[serde(skip)]
+    show_quitable: bool,
+    #[serde(skip)]
     quitable: bool,
+    #[serde(skip)]
+    quit: bool,
 }
 
 impl Default for DynoState {
@@ -74,7 +85,9 @@ impl Default for DynoState {
             show_bottom_panel: true,
             show_left_panel: true,
             show_buffer_unsaved: false,
+            show_quitable: false,
             quitable: false,
+            quit: false,
         }
     }
 }
@@ -87,7 +100,9 @@ impl_cond_all!(
     show_logger_window  : bool => false,
     show_bottom_panel   : bool => false,
     show_buffer_unsaved : bool => false,
-    quitable            : bool => false
+    show_quitable       : bool => false,
+    quitable            : bool => false,
+    quit                : bool => false,
 );
 
 impl DynoState {
@@ -149,7 +164,7 @@ impl DynoState {
             });
             if menu_ui.button("Quit").clicked() {
                 LOG::info!("Exit submenu clicked");
-                self.quitable = !self.quitable;
+                self.set_show_quitable(true);
             }
         });
         ui.menu_button("View", |submenu_ui| {
@@ -173,7 +188,7 @@ impl DynoState {
 }
 
 macro_rules! impl_cond_and {
-    ($($name:ident: $tp:ty => $def:expr),*) => {
+    ($($name:ident: $tp:ty => $def:expr),* $(,)?) => {
         impl DynoState {
             paste!($(
                 #[allow(unused)]
@@ -189,7 +204,7 @@ macro_rules! impl_cond_and {
     };
 }
 macro_rules! impl_cond_setter_getter {
-    ($($name:ident: $tp:ty => $def:expr),*) => {
+    ($($name:ident: $tp:ty => $def:expr),* $(,)?) => {
         impl DynoState {
             paste!($(
                 #[allow(unused)]

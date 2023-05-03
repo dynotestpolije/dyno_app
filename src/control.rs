@@ -1,8 +1,8 @@
 use crate::{
     config::DynoConfig,
     paths::DynoPaths,
-    service::{self, PortInfo, SerialService},
-    widgets::{button::ButtonExt, DynoFileManager, MultiRealtimePlot},
+    service::{init_serial, SerialService},
+    widgets::{DynoFileManager, MultiRealtimePlot},
 };
 use dyno_types::{
     data_buffer::{BufferData, Data},
@@ -41,6 +41,9 @@ pub struct DynoControl {
     info: Arc<RwLock<InfoMotor>>,
     panel_setting: PanelSetting,
     edit_path: bool,
+    buffer_saved: bool,
+
+    start: Option<dyno_types::chrono::NaiveDateTime>,
 }
 impl Default for DynoControl {
     fn default() -> Self {
@@ -71,6 +74,8 @@ impl Default for DynoControl {
             buffer: BufferData::new(),
             panel_setting: PanelSetting::Generic,
             edit_path: false,
+            buffer_saved: false,
+            start: None,
         }
     }
 }
@@ -82,7 +87,7 @@ impl DynoControl {
 
     #[allow(unused)]
     pub fn init_serial(&mut self) {
-        self.service = service::init_serial();
+        self.service = init_serial();
     }
 
     #[inline]
@@ -93,12 +98,36 @@ impl DynoControl {
             };
             let data = Data::from_serial(&info, serial_data);
             self.buffer.push_data(data);
+            self.buffer_saved = false;
         }
     }
 
     #[inline(always)]
     pub fn last_buffer(&self) -> Data {
         self.buffer.last()
+    }
+
+    pub fn service(&self) -> Option<&SerialService> {
+        self.service.as_ref()
+    }
+
+    pub fn service_mut(&mut self) -> Option<&mut SerialService> {
+        self.service.as_mut()
+    }
+
+    pub fn reinitialize_service(&mut self) -> DynoResult<()> {
+        self.service = Some(SerialService::new()?);
+        Ok(())
+    }
+
+    pub fn service_start(&mut self) -> DynoResult<'_, ()> {
+        if let Some(ref mut serial) = self.service {
+            self.start = Some(dyno_types::chrono::Utc::now().naive_local());
+            serial.start()?;
+            Ok(())
+        } else {
+            Err(From::from("[ERROR] Serial Port is not Initialize or not Connected!, try to Click on bottom left on 'STATUS' to reinitialize or reconnected"))
+        }
     }
 
     #[allow(unused)]
@@ -131,40 +160,18 @@ impl DynoControl {
     pub fn config(&self) -> &Arc<RwLock<DynoConfig>> {
         &self.config
     }
-}
 
-// ----------- DRAWER --------------
-impl DynoControl {
-    pub fn show_status(&self, ui: &mut Ui) {
-        match self.service {
-            Some(ref serial) => {
-                let PortInfo {
-                    port_name,
-                    vid,
-                    pid,
-                    ..
-                } = serial.get_info();
-                ui.colored_label(Color32::DARK_GREEN, "Running");
-                ui.separator();
-                ui.small(format!(
-                    "connected `PORT`[VID:PID]: `{port_name}`[{vid}:{pid}]"
-                ));
-                ui.separator();
-                ui.small_stop_button()
-                    .on_hover_text("Click to Stop the Service");
-            }
-            None => {
-                ui.colored_label(Color32::DARK_RED, "Not Running");
-                ui.separator();
-                ui.small("connected `PORT`[VID:PID]: `NO PORT`[00:00]");
-                ui.separator();
-                ui.small_play_button()
-                    .on_hover_text("Click to Start the Service");
-            }
-        }
-        ui.separator();
-        if let Ok(info) = self.info.read() {
-            ui.small(format!("Active Info: {}", info));
+    // mark return saved if buffer is already saved or buffer is empty
+    pub fn is_buffer_saved(&self) -> bool {
+        self.buffer_saved || self.buffer_empty()
+    }
+
+    #[inline]
+    pub fn start_time(&self, data: &Data) -> String {
+        if let Some(dt) = self.start {
+            data.time_duration_formatted(dt.time())
+        } else {
+            "00:00:00".to_owned()
         }
     }
 }
@@ -186,6 +193,7 @@ impl DynoControl {
             DynoFileType::Excel => self.buffer.save_as_excel(&file)?,
             _ => (),
         };
+        self.buffer_saved = true;
         Ok(Some(file))
     }
     pub fn on_save(&mut self, tp: DynoFileType) -> DynoResult<Option<PathBuf>> {

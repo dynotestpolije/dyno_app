@@ -6,10 +6,18 @@ use super::Anchor;
 
 const TOAST_WIDTH: f32 = 180.;
 const TOAST_HEIGHT: f32 = 34.;
+
 const ERROR_COLOR: Color32 = Color32::from_rgb(200, 90, 90);
+const ERROR_COLOR_BG: Color32 = Color32::from_rgb(20, 9, 9);
+
 const INFO_COLOR: Color32 = Color32::from_rgb(150, 200, 210);
+const INFO_COLOR_BG: Color32 = Color32::from_rgb(15, 20, 21);
+
 const WARNING_COLOR: Color32 = Color32::from_rgb(230, 220, 140);
+const WARNING_COLOR_BG: Color32 = Color32::from_rgb(23, 22, 14);
+
 const SUCCESS_COLOR: Color32 = Color32::from_rgb(140, 230, 140);
+const SUCCESS_COLOR_BG: Color32 = Color32::from_rgb(14, 23, 14);
 
 /// Level of importance
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
@@ -195,6 +203,14 @@ impl Toast {
         self
     }
 
+    pub fn duration_timeout_check(&mut self) {
+        if let Some((_initial_d, current_d)) = self.duration {
+            if current_d <= 0. {
+                self.state = ToastState::Disapper;
+            }
+        }
+    }
+
     /// Dismiss this toast
     pub fn dismiss(&mut self) {
         self.state = ToastState::Disapper;
@@ -258,10 +274,10 @@ impl Toasts {
     /// Adds new toast to the collection.
     /// By default adds toast at the end of the list, can be changed with `self.reverse`.
     pub fn add(&mut self, toast: Toast) {
-        if !self.reverse {
-            return self.toasts.push(toast);
+        if self.reverse {
+            return self.toasts.insert(0, toast);
         }
-        self.toasts.insert(0, toast);
+        self.toasts.push(toast);
     }
 
     /// Dismisses the oldest toast
@@ -280,17 +296,17 @@ impl Toasts {
 
     /// Dismisses all toasts
     pub fn dismiss_all_toasts(&mut self) {
-        for toast in self.toasts.iter_mut() {
-            toast.dismiss();
-        }
+        self.toasts.iter_mut().for_each(|toast| toast.dismiss());
     }
 
     /// Shortcut for adding a toast with info `success`.
+    #[inline]
     pub fn success(&mut self, caption: impl ToString) {
         self.add(Toast::success(caption))
     }
 
     /// Shortcut for adding a toast with info `level`.
+    #[inline]
     pub fn info(&mut self, caption: impl ToString) {
         let caption = caption.to_string();
         dyno_types::log::info!("{}", &caption);
@@ -298,6 +314,7 @@ impl Toasts {
     }
 
     /// Shortcut for adding a toast with warning `level`.
+    #[inline]
     pub fn warning(&mut self, caption: impl ToString) {
         let caption = caption.to_string();
         dyno_types::log::warn!("{}", &caption);
@@ -305,6 +322,7 @@ impl Toasts {
     }
 
     /// Shortcut for adding a toast with error `level`.
+    #[inline]
     pub fn error(&mut self, caption: impl ToString) {
         let caption = caption.to_string();
         dyno_types::log::error!("{}", &caption);
@@ -312,6 +330,7 @@ impl Toasts {
     }
 
     /// Shortcut for adding a toast with no level.
+    #[inline]
     pub fn basic(&mut self, caption: impl ToString) {
         self.add(Toast::basic(caption))
     }
@@ -363,26 +382,18 @@ impl Toasts {
 
         let pos_max_rect = ctx.input(|input| input.screen_rect.max);
         let mut pos = anchor.screen_corner(pos_max_rect, *margin);
-        let p = ctx.layer_painter(LayerId::new(Order::Foreground, Id::new("toasts")));
+        let painter = ctx.layer_painter(LayerId::new(Order::Foreground, Id::new("dyno_toasts")));
 
         let mut dismiss = None;
 
         // Remove disappeared toasts
         toasts.retain(|toast| !toast.state.disappeared());
-
         // Start disappearing expired toasts
-        toasts.iter_mut().for_each(|t| {
-            if let Some((_initial_d, current_d)) = t.duration {
-                if current_d <= 0. {
-                    t.state = ToastState::Disapper
-                }
-            }
-        });
-
+        toasts
+            .iter_mut()
+            .for_each(|tst| tst.duration_timeout_check());
         // `held` used to prevent sticky removal
-        if ctx.input(|inp| inp.pointer.primary_released()) {
-            *held = false;
-        }
+        ctx.input(|inp| *held = !inp.pointer.primary_released());
 
         let visuals = ctx.style().visuals.widgets.noninteractive;
         let mut update = false;
@@ -395,13 +406,25 @@ impl Toasts {
                     update = true;
                 }
             }
+            let bg_color = match toast.level {
+                ToastLevel::Info => INFO_COLOR_BG,
+                ToastLevel::Warning => WARNING_COLOR_BG,
+                ToastLevel::Error => ERROR_COLOR_BG,
+                ToastLevel::Success => SUCCESS_COLOR_BG,
+                ToastLevel::None => visuals.bg_fill,
+            };
+            let fg_color = if toast.level == ToastLevel::None {
+                visuals.fg_stroke.color
+            } else {
+                Color32::WHITE
+            };
 
             // Create toast label
             let caption_galley = ctx.fonts(|font| {
                 font.layout(
                     toast.caption.clone(),
-                    FontId::proportional(16.),
-                    visuals.fg_stroke.color,
+                    FontId::proportional(14.),
+                    fg_color,
                     f32::INFINITY,
                 )
             });
@@ -439,14 +462,8 @@ impl Toasts {
             // Create closing cross
             let cross_galley = if toast.closable {
                 let cross_fid = FontId::proportional(icon_width);
-                let cross_galley = ctx.fonts(|font| {
-                    font.layout(
-                        "❌".into(),
-                        cross_fid,
-                        visuals.fg_stroke.color,
-                        f32::INFINITY,
-                    )
-                });
+                let cross_galley =
+                    ctx.fonts(|font| font.layout("❌".into(), cross_fid, fg_color, f32::INFINITY));
                 Some(cross_galley)
             } else {
                 None
@@ -483,7 +500,7 @@ impl Toasts {
             pos.x -= anim_offset * anchor.anim_side();
 
             // Draw background
-            p.rect_filled(rect, Rounding::same(4.), visuals.bg_fill);
+            painter.rect_filled(rect, Rounding::same(4.), bg_color);
 
             // Paint icon
             if let Some((icon_galley, true)) =
@@ -491,7 +508,7 @@ impl Toasts {
             {
                 let oy = toast.height / 2. - action_height / 2.;
                 let ox = padding.x + icon_x_padding.0;
-                p.galley(rect.min + vec2(ox, oy), icon_galley);
+                painter.galley(rect.min + vec2(ox, oy), icon_galley);
             }
 
             // Paint caption
@@ -507,7 +524,7 @@ impl Toasts {
                 cross_width + cross_x_padding.0
             };
             let ox = (toast.width / 2. - caption_width / 2.) + o_from_icon / 2. - o_from_cross / 2.;
-            p.galley(rect.min + vec2(ox, oy), caption_galley);
+            painter.galley(rect.min + vec2(ox, oy), caption_galley);
 
             // Paint cross
             if let Some(cross_galley) = cross_galley {
@@ -515,7 +532,7 @@ impl Toasts {
                 let oy = toast.height / 2. - cross_height / 2.;
                 let ox = toast.width - cross_width - cross_x_padding.1 - padding.x;
                 let cross_pos = rect.min + vec2(ox, oy);
-                p.galley(cross_pos, cross_galley);
+                painter.galley(cross_pos, cross_galley);
 
                 let screen_cross = Rect {
                     max: cross_pos + cross_rect.max.to_vec2(),
@@ -533,12 +550,12 @@ impl Toasts {
             // Draw duration
             if let Some((initial, current)) = toast.duration {
                 if !toast.state.disappearing() {
-                    p.line_segment(
+                    painter.line_segment(
                         [
                             rect.min + vec2(0., toast.height),
                             rect.max - vec2((1. - (current / initial)) * toast.width, 0.),
                         ],
-                        Stroke::new(4., visuals.fg_stroke.color),
+                        Stroke::new(4., fg_color),
                     );
                 }
             }
