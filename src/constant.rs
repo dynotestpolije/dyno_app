@@ -8,6 +8,7 @@ macro_rules! get_assets {
 pub const APP_KEY: &str = "dynotest-app";
 
 pub mod assets {
+    use dyno_core::lazy_static;
 
     macro_rules! declare_static_ico {
         ($($name: ident => $file_name: literal),* $(,)?) => {$(
@@ -88,7 +89,7 @@ pub mod assets {
                     })
                 }
                 Err(err) => {
-                    dyno_types::log::error!(
+                    dyno_core::log::error!(
                         "failed to load image in path: {} - {}",
                         $path.display(),
                         err

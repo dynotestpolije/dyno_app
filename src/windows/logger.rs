@@ -1,5 +1,4 @@
-use std::fs;
-use std::{env, path::PathBuf};
+use std::{env, fs, path::PathBuf};
 
 use eframe::{
     egui::{widgets, Align, Context, Layout, ScrollArea, Ui, Window},
@@ -8,7 +7,7 @@ use eframe::{
 use itertools::Itertools;
 
 use crate::widgets::{button::ButtonExt, DynoFileManager, DynoWidgets};
-use dyno_types::{log::Level, RECORDS_LOGGER};
+use dyno_core::{log::Level, serde, RECORDS_LOGGER};
 
 const SIZE_LEVEL: usize = Level::Trace as usize;
 const LEVELS: [Level; SIZE_LEVEL] = [
@@ -31,6 +30,7 @@ pub const fn level_color(lvl: Level) -> Color32 {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(crate = "serde")]
 pub struct LoggerWindow {
     loglevels: [bool; SIZE_LEVEL],
     term: String,
@@ -125,7 +125,7 @@ impl LoggerWindow {
                         &[("logfile", &["log", "log.log", "dlog"])],
                     ) {
                         if let Err(err) = fs::write(&file, logs.iter().map(|(_, s)| s).join("\n")) {
-                            dyno_types::log::error!(
+                            crate::log::error!(
                                 "Failed to write to file '{}' - {err}",
                                 file.display()
                             );
@@ -156,7 +156,12 @@ impl LoggerWindow {
 
 /// Draws the logger ui
 impl super::WindowState for LoggerWindow {
-    fn show_window(&mut self, ctx: &Context, state: &mut crate::state::DynoState) {
+    fn show_window(
+        &mut self,
+        ctx: &Context,
+        _control: &mut crate::control::DynoControl,
+        state: &mut crate::state::DynoState,
+    ) {
         Window::new("Dyno Log Window")
             .open(state.show_logger_window_mut())
             .resizable(true)

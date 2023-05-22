@@ -1,4 +1,4 @@
-use dyno_types::DynoResult;
+use crate::DynoResult;
 use rfd::{MessageButtons, MessageDialog, MessageLevel};
 
 pub enum Level {
@@ -111,7 +111,7 @@ pub trait MsgDialogUnwrap<T> {
         T: Default;
 }
 
-impl<T> MsgDialogUnwrap<T> for DynoResult<'_, T> {
+impl<T> MsgDialogUnwrap<T> for DynoResult<T> {
     #[inline(always)]
     fn msg_dialog_unwrap(self, name: &'static str) -> Option<T> {
         match self {

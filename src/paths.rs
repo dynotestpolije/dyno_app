@@ -4,10 +4,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use dyno_types::{bincode, paste::paste, toml, DynoErr, DynoResult};
-use serde::{de::DeserializeOwned, Serialize};
-
 use crate::widgets::DynoFileManager;
+use dyno_core::{chrono::Local, paste::paste, serde, toml, CompresedSaver, DynoErr, DynoResult};
+use serde::{de::DeserializeOwned, Serialize};
 
 macro_rules! dyno_paths {
     ($struct_name: ident, [$($fn_name:ident),*]) => {
@@ -43,6 +42,7 @@ macro_rules! dyno_paths {
 
 #[allow(unused)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(crate = "serde")]
 pub struct DynoPaths {
     pub name: String,
     pub project_path: PathBuf,
@@ -69,7 +69,6 @@ dyno_paths!(
 
 #[inline]
 pub fn file_name_timestamp(extension: &str) -> String {
-    use dyno_types::chrono::Local;
     format!("{}.{}", Local::now().format("%v_%s"), extension)
 }
 
@@ -197,27 +196,25 @@ impl DynoPaths {
     #[inline]
     pub fn get_bin<D>(&self, filename: &'_ str) -> DynoResult<D>
     where
-        D: DeserializeOwned + 'static,
+        D: CompresedSaver,
     {
         let file = self.get_data_dir_file(filename);
         if !file.exists() {
-            let err = format!("File binaries `{f}` doesn't exists!", f = file.display());
-            return Err(DynoErr::input_output_error(err));
+            return Err(DynoErr::filesystem_error(format!(
+                "File binaries `{f}` doesn't exists!",
+                f = file.display()
+            )));
         }
-        fs::File::open(file).map_or_else(
-            |err| Err(From::from(err)),
-            |reader| bincode::deserialize_from(reader).map_err(From::from),
-        )
+        D::decompress_from_file(file).map_err(From::from)
     }
 
     #[inline]
     pub fn set_bin<S>(&self, config: S, filename: &'_ str) -> DynoResult<()>
     where
-        S: Serialize,
+        S: CompresedSaver,
     {
         let file = self.get_data_dir_file(filename);
-        let contents = bincode::serialize(&config)?;
-        fs::write(file, contents).map_err(From::from)
+        S::compress_to_file(&config, file).map_err(From::from)
     }
 
     pub fn draw(&mut self, ui: &mut eframe::egui::Ui, edit: &mut bool) {

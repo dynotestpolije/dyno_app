@@ -15,6 +15,7 @@ mod ploter;
 #[cfg(feature = "barcodes")]
 pub mod barcodes;
 
+use dyno_core::{derive_more::Display, AsStr};
 pub use opener::{DynoFileManager, Filters};
 pub use ploter::MultiRealtimePlot;
 
@@ -95,14 +96,14 @@ pub trait DynoWidgets: button::ButtonExt + Sized {
     where
         V: Clone + Copy + PartialEq + std::fmt::Display;
 
-    fn combobox_from_slice<V>(
+    fn combobox_from_slice<'s, V>(
         &mut self,
         label: impl Into<eframe::egui::WidgetText>,
         current_value: &mut V,
-        values: &'_ [V],
+        values: &'s [V],
     ) -> eframe::egui::Response
     where
-        V: Clone + Copy + PartialEq + std::fmt::Display;
+        V: Clone + Copy + PartialEq + AsStr<'s>;
 
     fn selectable_label_from_slice<W>(
         &mut self,
@@ -292,23 +293,21 @@ impl DynoWidgets for eframe::egui::Ui {
                 self.colored_label(self.style().visuals.error_fg_color, "\u{1F525} No items")
             })
     }
-    fn combobox_from_slice<V>(
+    fn combobox_from_slice<'s, V>(
         &mut self,
         label: impl Into<eframe::egui::WidgetText>,
         current_value: &mut V,
-        values: &'_ [V],
+        values: &'s [V],
     ) -> eframe::egui::Response
     where
-        V: Clone + PartialEq + std::fmt::Display,
+        V: Clone + PartialEq + AsStr<'s>,
     {
         let combobox = eframe::egui::ComboBox::from_label(label)
-            .selected_text(format!("{current_value}"))
+            .selected_text(current_value.as_str())
             .show_ui(self, |ui| {
                 values
                     .iter()
-                    .map(|value| {
-                        ui.selectable_value(current_value, value.clone(), format!("{value}"))
-                    })
+                    .map(|value| ui.selectable_value(current_value, value.clone(), value.as_str()))
                     .reduce(|result, response| result.union(response))
                     .unwrap_or_else(|| {
                         ui.colored_label(ui.style().visuals.error_fg_color, "\u{1F525} No items")
@@ -565,7 +564,7 @@ impl Default for DisplayStyle {
 }
 
 #[non_exhaustive]
-#[derive(Clone, Copy, Debug, dyno_types::derive_more::Display, Eq, PartialEq, Default)]
+#[derive(Clone, Copy, Debug, Display, Eq, PartialEq, Default)]
 pub enum DisplayStylePreset {
     #[default]
     #[display(fmt = "Default")]

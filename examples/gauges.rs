@@ -24,7 +24,7 @@ fn main() {
 
 struct ExampleGauge {
     value: f32,
-    presets: [GaugeTypes; 5],
+    presets: [GaugeTypes; 6],
 }
 
 impl ExampleGauge {
@@ -33,7 +33,8 @@ impl ExampleGauge {
             value: 0f32,
             presets: [
                 GaugeTypes::Default,
-                GaugeTypes::RpmGauge,
+                GaugeTypes::RpmRodaGauge,
+                GaugeTypes::RpmEngineGauge,
                 GaugeTypes::SpeedGauge,
                 GaugeTypes::TorqueGauge,
                 GaugeTypes::HorsepowerGauge,

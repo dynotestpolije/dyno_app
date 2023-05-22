@@ -1,12 +1,13 @@
 #![allow(dead_code)]
 
-use super::{codec::Codec, CmdMsg, PortInfo};
-use dyno_types::{DynoErr, DynoResult, ResultHandler, SerialData};
+use super::PortInfo;
+use dyno_core::{ignore_err, log, DynoErr, DynoResult, ResultHandler, SerialData};
 use serialport::SerialPort;
 use std::{
+    io::{BufRead, BufReader, ErrorKind as IOEK},
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc::{channel, Receiver},
+        mpsc::{channel, Receiver, Sender},
         Arc, Mutex,
     },
     thread::JoinHandle,
@@ -24,55 +25,76 @@ enum SerialFlag {
 
 #[derive(Clone)]
 pub struct SerialService {
-    serial: Arc<Mutex<Box<dyn SerialPort>>>,
-    info: PortInfo,
-    rx: Arc<Receiver<SerialData>>,
+    pub info: PortInfo,
+
+    rx: Arc<Receiver<Option<SerialData>>>,
+    tx: Sender<Option<SerialData>>,
     running_flag: Arc<AtomicBool>,
 }
 
 impl SerialService {
-    const BAUD_RATE: u32 = 500_000;
-    pub fn new<'err>() -> DynoResult<'err, Self> {
-        let (_, rx) = channel();
+    pub const MAX_BUFFER_SIZE: usize = 1024;
+    const BAUD_RATE: u32 = 512_000;
+    pub fn new() -> DynoResult<Self> {
+        let (tx, rx) = channel();
         let info = super::get_dyno_port()?.ok_or(DynoErr::service_error(
             "Failed to get port info, there is no port available in this machine",
         ))?;
-        let serial = Arc::new(Mutex::new(
-            serialport::new(&info.port_name, Self::BAUD_RATE)
-                .timeout(Duration::from_millis(300))
-                .open()
-                .map_err(|err| DynoErr::service_error(err.to_string()))?,
-        ));
         Ok(Self {
-            serial,
             info,
+            tx,
             rx: Arc::new(rx),
             running_flag: Arc::new(AtomicBool::new(false)),
         })
     }
 
     pub fn start(&mut self) -> DynoResult<JoinHandle<()>> {
-        let (tx, rx) = channel();
-        self.rx = Arc::new(rx);
-        self.running_flag.store(true, Ordering::SeqCst);
-
-        self.send(CmdMsg::Start).ok();
+        self.running_flag.store(true, Ordering::Relaxed);
 
         let running = self.running_flag.clone();
-        let serial_port = self.serial.clone();
+        let mut serial_port = BufReader::with_capacity(Self::MAX_BUFFER_SIZE, {
+            let mut ser = serialport::new(&self.info.port_name, Self::BAUD_RATE)
+                .timeout(Duration::from_millis(300))
+                .open()
+                .map_err(|err| DynoErr::serial_port_error(err.to_string()))?;
+            ignore_err!(ser.write(&b"cmd:1\n"[..]));
+            ser
+        });
+        let tx = self.tx.clone();
 
         let serial_thread_spawn = move || {
-            let mut codec = Codec::new(serial_port);
-            while running.load(Ordering::SeqCst) {
-                match codec.next_read() {
-                    Ok(None) => continue,
-                    Ok(Some(data)) => tx.send(data).ok(),
-                    Err(_) => {
-                        running.store(false, Ordering::SeqCst);
-                        break;
+            // let mut codec = Cod;c::new(serial_port);
+            let mut last: usize = 0;
+            let mut buffer: Vec<u8> = Vec::with_capacity(SerialData::SIZE * 2);
+
+            'loops: loop {
+                if !running.load(Ordering::Relaxed) {
+                    break 'loops;
+                }
+                match serial_port.read_until(SerialData::DELIM, &mut buffer) {
+                    Ok(len) if buffer[last + len - 1] == SerialData::DELIM => {
+                        ignore_err!(tx.send(SerialData::from_bytes(&buffer[..len - 1])));
+                        buffer.clear();
+                        last = 0;
                     }
-                };
+                    Ok(len) => {
+                        last += len;
+                        if last >= buffer.len() {
+                            buffer.clear();
+                            last = buffer.len();
+                        }
+                    }
+                    Err(err) => {
+                        if matches!(err.kind(), IOEK::WouldBlock | IOEK::Interrupted) {
+                            continue 'loops;
+                        }
+                        log::error!("ERROR: SerialPort Reads - {err}");
+                        running.store(false, Ordering::Relaxed);
+                    }
+                }
             }
+            drop(serial_port);
+            drop(buffer);
         };
         std::thread::Builder::new()
             .name("serial_thread".to_owned())
@@ -81,12 +103,11 @@ impl SerialService {
     }
 
     pub fn stop(&mut self) {
-        self.running_flag.store(false, Ordering::SeqCst);
-        self.send(CmdMsg::Stop).ok();
+        self.running_flag.store(false, Ordering::Relaxed);
     }
 
     pub fn is_open(&self) -> bool {
-        self.running_flag.load(Ordering::SeqCst)
+        self.running_flag.load(Ordering::Relaxed)
     }
 
     #[inline(always)]
@@ -101,15 +122,7 @@ impl SerialService {
 
 impl SerialService {
     #[inline(always)]
-    pub fn handle(&self) -> DynoResult<SerialData> {
-        self.rx.try_recv().map_err(|_| DynoErr::noop())
-    }
-
-    #[inline(always)]
-    pub fn send(&self, cmd: CmdMsg) -> DynoResult<()> {
-        match self.serial.lock() {
-            Ok(mut ser) => ser.write_all(cmd.as_bytes()).dyn_err(),
-            Err(_) => Err(DynoErr::noop()),
-        }
+    pub fn handle(&self) -> Option<SerialData> {
+        self.rx.try_recv().ok().flatten()
     }
 }

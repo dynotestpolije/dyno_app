@@ -4,15 +4,16 @@ use eframe::{
 };
 
 use crate::{assets::ICO_LOGO, open_option_icon, widgets::DynoWidgets};
-use serde::{Deserialize, Serialize};
+use dyno_core::serde;
 
-#[derive(Clone, Default, Serialize, Deserialize)]
-pub struct DynoConfig {
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(crate = "serde")]
+pub struct ApplicationConfig {
     pub app_options: AppOptions,
     pub show_startup: bool,
 }
 
-impl DynoConfig {
+impl ApplicationConfig {
     pub fn check_is_changed(&mut self, other: &Self) {
         if !self.app_options.eq(&other.app_options) && self.show_startup != other.show_startup {
             *self = other.clone();
@@ -25,8 +26,8 @@ impl DynoConfig {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default, crate = "serde")]
 pub struct AppOptions {
     pub icon_path: Option<String>,
     pub always_on_top: bool,

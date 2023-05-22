@@ -301,31 +301,32 @@ impl Toasts {
 
     /// Shortcut for adding a toast with info `success`.
     #[inline]
-    pub fn success(&mut self, caption: impl ToString) {
+    pub fn success(&mut self, caption: impl ToString + std::fmt::Display) {
+        dyno_core::log::info!("{}", &caption);
         self.add(Toast::success(caption))
     }
 
     /// Shortcut for adding a toast with info `level`.
     #[inline]
-    pub fn info(&mut self, caption: impl ToString) {
+    pub fn info(&mut self, caption: impl ToString + std::fmt::Display) {
         let caption = caption.to_string();
-        dyno_types::log::info!("{}", &caption);
+        dyno_core::log::info!("{}", &caption);
         self.add(Toast::info(caption))
     }
 
     /// Shortcut for adding a toast with warning `level`.
     #[inline]
-    pub fn warning(&mut self, caption: impl ToString) {
+    pub fn warning(&mut self, caption: impl ToString + std::fmt::Display) {
         let caption = caption.to_string();
-        dyno_types::log::warn!("{}", &caption);
+        dyno_core::log::warn!("{}", &caption);
         self.add(Toast::warning(caption))
     }
 
     /// Shortcut for adding a toast with error `level`.
     #[inline]
-    pub fn error(&mut self, caption: impl ToString) {
+    pub fn error(&mut self, caption: impl ToString + std::fmt::Display) {
         let caption = caption.to_string();
-        dyno_types::log::error!("{}", &caption);
+        dyno_core::log::error!("{}", &caption);
         self.add(Toast::error(caption))
     }
 
@@ -599,4 +600,24 @@ impl Default for Toasts {
 
 fn ease_in_cubic(x: f32) -> f32 {
     1. - (1. - x).powi(3)
+}
+
+#[macro_export]
+macro_rules! toast_error {
+    ($($args:tt)*) => { $crate::TOAST_MSG.lock().error(format!($($args)*)) };
+}
+
+#[macro_export]
+macro_rules! toast_warn {
+    ($($args:tt)*) => { $crate::TOAST_MSG.lock().warning(format!($($args)*)) };
+}
+
+#[macro_export]
+macro_rules! toast_info {
+    ($($args:tt)*) => { $crate::TOAST_MSG.lock().info(format!($($args)*)) };
+}
+
+#[macro_export]
+macro_rules! toast_success {
+    ($($args:tt)*) => { $crate::TOAST_MSG.lock().success(format!($($args)*)) };
 }

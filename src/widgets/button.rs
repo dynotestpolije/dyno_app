@@ -1,5 +1,5 @@
-use super::{DisplayStyle, DisplayStylePreset};
-use dyno_types::derive_more::Display;
+use crate::widgets::{DisplayStyle, DisplayStylePreset};
+use dyno_core::{derive_more::Display, paste::paste};
 use eframe::egui::{
     vec2, Align2, FontFamily, FontId, Key, Rect, Response, Sense, Stroke, Ui, Widget,
 };
@@ -150,7 +150,6 @@ impl Default for ButtonKind {
         Self::Any
     }
 }
-use dyno_types::paste::paste;
 
 macro_rules!  standart_button {
     ($traits:ident {$( $name: ident),*}) => {

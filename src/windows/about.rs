@@ -1,10 +1,11 @@
+use crate::{widgets::DynoWidgets, PACKAGE_INFO};
 use eframe::egui::Window;
 use eframe::epaint::Vec2;
 
-use crate::widgets::DynoWidgets;
-use crate::PACKAGE_INFO;
+use dyno_core::serde;
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(crate = "serde")]
 pub struct AboutWindow;
 
 impl AboutWindow {
@@ -14,7 +15,12 @@ impl AboutWindow {
 }
 
 impl super::WindowState for AboutWindow {
-    fn show_window(&mut self, ctx: &eframe::egui::Context, state: &mut crate::state::DynoState) {
+    fn show_window(
+        &mut self,
+        ctx: &eframe::egui::Context,
+        _control: &mut crate::control::DynoControl,
+        state: &mut crate::state::DynoState,
+    ) {
         let uidraw_collapsing = |ui: &mut eframe::egui::Ui| {
             ui.horizontal(|ui| {
                 for (author_name, author_email) in PACKAGE_INFO.authors() {

@@ -4,7 +4,7 @@ use eframe::{
     epaint::TextShape,
 };
 
-use dyno_types::derive_more::Display;
+use dyno_core::{derive_more::Display, Numeric};
 use itertools::Itertools;
 // ----------------------------------------------------------------------------
 
@@ -341,13 +341,7 @@ pub(crate) fn paint_ellipse(
 // ----------------------------------------------------------------------------
 #[allow(unused)]
 #[inline(always)]
-pub fn map_range<T: dyno_types::Numeric>(
-    value: T,
-    in_min: T,
-    in_max: T,
-    out_min: T,
-    out_max: T,
-) -> T {
+pub fn map_range<T: Numeric>(value: T, in_min: T, in_max: T, out_min: T, out_max: T) -> T {
     ((value - in_min) / (in_max - in_min)) * (out_max - out_min) + out_min
 }
 

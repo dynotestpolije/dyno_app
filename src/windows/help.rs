@@ -1,4 +1,7 @@
+use dyno_core::serde;
+
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(crate = "serde")]
 pub struct HelpWindow;
 impl HelpWindow {
     pub fn new() -> Self {
@@ -8,7 +11,12 @@ impl HelpWindow {
 
 // TODO(rizal_achp): implement help window
 impl super::WindowState for HelpWindow {
-    fn show_window(&mut self, _ctx: &eframe::egui::Context, state: &mut crate::state::DynoState) {
+    fn show_window(
+        &mut self,
+        _ctx: &eframe::egui::Context,
+        _control: &mut crate::control::DynoControl,
+        state: &mut crate::state::DynoState,
+    ) {
         if !state.show_help() {
             return;
         }

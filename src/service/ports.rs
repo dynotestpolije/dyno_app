@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use dyno_types::{DynoErr, DynoResult};
+use crate::{DynoErr, DynoResult};
 use serialport::{SerialPortInfo, SerialPortType::UsbPort, UsbPortInfo};
 
 #[derive(Debug, Clone, Default)]
@@ -43,7 +43,7 @@ impl PortInfo {
     }
 }
 
-pub fn get_dyno_port<'err>() -> DynoResult<'err, Option<PortInfo>> {
+pub fn get_dyno_port() -> DynoResult<Option<PortInfo>> {
     serialport::available_ports()
         .map(|x| {
             x.into_iter()

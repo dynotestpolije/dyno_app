@@ -1,5 +1,6 @@
 #![allow(unused)]
 
+use dyno_core::paste::paste;
 use std::path::{Path, PathBuf};
 
 pub type Filters = &'static [(&'static str, &'static [&'static str])];
@@ -55,7 +56,6 @@ impl DynoFileManager {
     }
 }
 
-use dyno_types::paste::paste;
 macro_rules! impl_file_picker {
     ( $( $name:ident -> [$($tuples:tt)*] ),* $(,)?) => {
         impl DynoFileManager {

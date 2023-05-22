@@ -1,4 +1,4 @@
-use dyno_types::derive_more::Display;
+use dyno_core::derive_more::Display;
 
 #[derive(Clone, Copy)]
 pub struct DisplayMetrics {

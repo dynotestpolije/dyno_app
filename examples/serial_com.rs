@@ -18,8 +18,8 @@ fn main() {
 
     while !handle.is_finished() {
         match serial_service.handle() {
-            Ok(data) => println!("DATA: {data}"),
-            Err(err) => eprintln!("ERROR: {err}"),
+            Some(data) => println!("DATA: {data}"),
+            None => eprintln!("Data not handled"),
         }
     }
     handle.join().expect("Cannot Join Handle");
