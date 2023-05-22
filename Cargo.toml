@@ -22,6 +22,7 @@ directories         = { version = "^5" }
 serialport          = { version = "^4"  }
 crossbeam-channel   = { version = "^0.5" }
 url = "2.3.1"
+futures = "0.3.28"
 
 [dependencies.rfd]
 version = "^0.11"
@@ -43,6 +44,7 @@ features = ["persistence"]
 # git = "https://github.com/dynotestpolije/dyno_types.git"
 # branch = "main" 
 path = "../dyno_core"
+features = ["frontend"]
 
 [dependencies.barcoders]
 version = "^1"

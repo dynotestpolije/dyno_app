@@ -1,9 +1,12 @@
-mod ports;
+// mod api;
 mod serial;
-// pub mod api;
 
-pub use ports::{get_dyno_port, PortInfo};
-pub use serial::SerialService;
+// pub use api::*;
+
+pub use serial::{
+    ports::{get_dyno_port, PortInfo},
+    SerialService,
+};
 
 pub fn init_serial() -> Option<SerialService> {
     match SerialService::new() {

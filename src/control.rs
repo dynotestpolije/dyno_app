@@ -1,7 +1,7 @@
 use crate::{
     config::ApplicationConfig,
     paths::DynoPaths,
-    service::{init_serial, SerialService},
+    service::{init_serial, PortInfo, SerialService},
     state::{DynoFileType, DynoState, OperatorData},
     toast_error, toast_success,
     widgets::{button::ButtonExt, DynoFileManager, MultiRealtimePlot},
@@ -294,12 +294,12 @@ impl DynoControl {
         let layout_ui_status = |ltr_ui: &mut Ui| {
             match &self.service {
                 Some(serial) => {
-                    let crate::service::PortInfo {
+                    let PortInfo {
                         port_name,
                         vid,
                         pid,
                         ..
-                    } = serial.get_info();
+                    }: &PortInfo = serial.get_info();
                     let (status, color) = if serial.is_open() {
                         ("STATUS: Running", Color32::YELLOW)
                     } else {

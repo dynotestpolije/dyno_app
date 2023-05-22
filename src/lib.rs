@@ -1,6 +1,5 @@
 mod constant;
 
-pub mod app;
 pub mod config;
 pub mod control;
 pub mod paths;
