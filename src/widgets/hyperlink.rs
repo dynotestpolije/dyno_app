@@ -1,7 +1,41 @@
-use dyno_types::reqwest::Url;
 use eframe::egui::Hyperlink;
+use url::Url;
 
 static FONT_ICONS: &'_ [(&'_ str, char)] = &[
+    // Websites
+    ("https://apps.apple.com/", '\u{F8FF}'),
+    ("https://crates.io/", '\u{1F4E6}'),
+    ("https://docs.rs/", '\u{1F4DA}'),
+    ("https://drive.google.com/", '\u{E62F}'),
+    ("https://play.google.com/store/apps/", '\u{E618}'),
+    ("https://soundcloud.com/", '\u{E627}'),
+    ("https://stackoverflow.com/", '\u{E601}'),
+    ("https://steamcommunity.com/", '\u{E623}'),
+    ("https://store.steampowered.com/", '\u{E623}'),
+    ("https://twitter.com/", '\u{E603}'),
+    ("https://vimeo.com/", '\u{E602}'),
+    ("https://www.dropbox.com/", '\u{E610}'),
+    ("https://www.facebook.com/", '\u{E604}'),
+    ("https://www.instagram.com/", '\u{E60F}'),
+    ("https://www.paypal.com/", '\u{E616}'),
+    ("https://www.youtube.com/", '\u{E636}'),
+    ("https://youtu.be/", '\u{E636}'),
+    // Generic git rules
+    ("https://git.com/", '\u{E625}'),
+    ("https://cgit.com/", '\u{E625}'),
+    ("https://gitlab.com/", '\u{E625}'),
+    ("https://RizalAchp.github.io/", '\u{E624}'),
+    ("https://RizalAchp.gitlab.io/", '\u{E625}'),
+    ("https://RizalAchp.reddit.com/", '\u{E628}'),
+    // Non-exhaustive list of some git instances not covered by the generic rules
+    ("https://bitbucket.org/", '\u{E625}'),
+    ("https://code.qt.io/", '\u{E625}'),
+    ("https://code.videolan.org/", '\u{E625}'),
+    ("https://framagit.org/", '\u{E625}'),
+    ("https://gitee.com/", '\u{E625}'),
+    ("https://github.com/", '\u{E624}'),
+    ("https://invent.kde.org/", '\u{E625}'),
+    ("https://salsa.debian.org/", '\u{E625}'),
     // Warnings
     ("ftp", '\u{26A0}'),
     ("http", '\u{26A0}'),
@@ -44,55 +78,16 @@ static FONT_ICONS: &'_ [(&'_ str, char)] = &[
     ("ssh", '\u{1F5A5}'),
     ("steam", '\u{E623}'),
     ("tel", '\u{1F4DE}'),
-    // Websites
-    ("https://apps.apple.com/", '\u{F8FF}'),
-    ("https://crates.io/", '\u{1F4E6}'),
-    ("https://docs.rs/", '\u{1F4DA}'),
-    ("https://drive.google.com/", '\u{E62F}'),
-    ("https://play.google.com/store/apps/", '\u{E618}'),
-    ("https://soundcloud.com/", '\u{E627}'),
-    ("https://stackoverflow.com/", '\u{E601}'),
-    ("https://steamcommunity.com/", '\u{E623}'),
-    ("https://store.steampowered.com/", '\u{E623}'),
-    ("https://twitter.com/", '\u{E603}'),
-    ("https://vimeo.com/", '\u{E602}'),
-    ("https://www.dropbox.com/", '\u{E610}'),
-    ("https://www.facebook.com/", '\u{E604}'),
-    ("https://www.instagram.com/", '\u{E60F}'),
-    ("https://www.paypal.com/", '\u{E616}'),
-    ("https://www.youtube.com/", '\u{E636}'),
-    ("https://youtu.be/", '\u{E636}'),
-    // Generic git rules
-    ("https://git.com/", '\u{E625}'),
-    ("https://cgit.com/", '\u{E625}'),
-    ("https://gitlab.com/", '\u{E625}'),
-    ("https://RizalAchp.github.io/", '\u{E624}'),
-    ("https://RizalAchp.gitlab.io/", '\u{E625}'),
-    ("https://RizalAchp.reddit.com/", '\u{E628}'),
-    // Non-exhaustive list of some git instances not covered by the generic rules
-    ("https://bitbucket.org/", '\u{E625}'),
-    ("https://code.qt.io/", '\u{E625}'),
-    ("https://code.videolan.org/", '\u{E625}'),
-    ("https://framagit.org/", '\u{E625}'),
-    ("https://gitee.com/", '\u{E625}'),
-    ("https://github.com/", '\u{E624}'),
-    ("https://invent.kde.org/", '\u{E625}'),
-    ("https://salsa.debian.org/", '\u{E625}'),
-    // Discord and friends have no symbols in the default emoji font.
 ];
 
 #[rustfmt::skip]
 fn hyperlink_icon(url: impl AsRef<str>) -> char {
-    let Ok(url) = Url::parse(url.as_ref()) else {
-        return '\u{2BA9}';
-    };
-    let scheme: &'_ str = url.scheme();
-    if let Some((_, icon)) = FONT_ICONS[0..40].iter().find(|(key, _)| key.eq(&scheme)) {
-        return *icon;
-    }
-    if let Some(host) = url.host_str() {
-        let base = format!("{}://{}/", scheme, host);
-        return FONT_ICONS[40..].iter().find_map(|(key, icon)| if key.eq(&base) { Some(*icon) } else { None }).unwrap_or('\u{2BA9}');
+    if let Ok(url) = Url::parse(url.as_ref()){
+        if let Some((_, icon)) = FONT_ICONS.iter().find(|(k, _)| {
+            k.starts_with(url.scheme()) ||  url.host_str().map(|h| k.contains(h)).is_some()
+        }) {
+            return *icon;
+        }
     }
 
     '\u{2BA9}'

@@ -3,16 +3,23 @@ use eframe::{
     IconData, NativeOptions, Theme,
 };
 
-use crate::{assets::ICO_LOGO, open_option_icon, widgets::DynoWidgets};
-use serde::{Deserialize, Serialize};
+use crate::{
+    assets::ICO_LOGO,
+    open_option_icon, row_label_value,
+    widgets::{DisplayStylePreset, DynoWidgets},
+};
+use dyno_core::serde;
 
-#[derive(Clone, Default, Serialize, Deserialize)]
-pub struct DynoConfig {
+#[cfg_attr(debug_assertions, derive(Debug))]
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(crate = "serde")]
+pub struct ApplicationConfig {
+    pub segment_display_style: DisplayStylePreset,
     pub app_options: AppOptions,
     pub show_startup: bool,
 }
 
-impl DynoConfig {
+impl ApplicationConfig {
     pub fn check_is_changed(&mut self, other: &Self) {
         if !self.app_options.eq(&other.app_options) && self.show_startup != other.show_startup {
             *self = other.clone();
@@ -22,11 +29,19 @@ impl DynoConfig {
         ui.checkbox(&mut self.show_startup, "Show Startup Window");
         ui.separator();
         self.app_options.ui(ui);
+
+        let iter = self.segment_display_style.get_iter();
+        ui.combobox_from_iter(
+            "Style for SevenSegment",
+            &mut self.segment_display_style,
+            iter,
+        );
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default, crate = "serde")]
 pub struct AppOptions {
     pub icon_path: Option<String>,
     pub always_on_top: bool,
@@ -53,11 +68,10 @@ impl AppOptions {
     pub fn ui(&mut self, ui: &mut eframe::egui::Ui) -> eframe::egui::Response {
         use eframe::egui::{Grid, RichText};
         ui.heading("Application Options Setting");
-        let resps = Grid::new("_grid_config_edit")
-            .striped(false)
-            .num_columns(4)
-            .show(ui, |ui| {
-                ui.optional_value_widget(&mut self.icon_path, |ui, value| {
+
+        let ui_grid_appoptions = |ui: &mut eframe::egui::Ui| {
+            row_label_value!(
+                ui => ui.optional_value_widget(&mut self.icon_path, |ui, value| {
                     let text = RichText::new(value.to_string())
                         .background_color(ui.visuals().extreme_bg_color);
                     let response = ui.link(text).on_hover_text("Left Click to Edit");
@@ -69,30 +83,42 @@ impl AppOptions {
                         }
                     }
                     response
-                });
-                ui.end_row();
-                ui.checkbox(&mut self.always_on_top, "Always On Top");
-                ui.checkbox(&mut self.maximized, "Maximized");
-                ui.checkbox(&mut self.decorated, "Decorated");
-                ui.checkbox(&mut self.fullscreen, "Fullscreen");
+                }),
+                "Icon Path",
+                "icon for aplication, default to icon thath saved memory to (embed into app)"
+            );
+            ui.end_row();
+            row_label_value!(ui => ui.toggle(&mut self.always_on_top),
+                    "AlwaysOnTop",
+                    "Aplication Config, Always on top window config parameters");
+            row_label_value!(ui => ui.toggle(&mut self.maximized),
+                    "Maximize",
+                    "Aplication Config, Maximize window config parameters");
+            ui.end_row();
+            row_label_value!(ui => ui.toggle(&mut self.decorated),
+                    "Decorated",
+                    "Aplication Config, Decorated window config parameters");
+            row_label_value!(ui => ui.toggle(&mut self.fullscreen),
+                    "Fullscreen",
+                    "Aplication Config, Fullscreen window config parameters");
+            ui.end_row();
+            row_label_value!(ui => ui.toggle(&mut self.drag_and_drop_support),
+                    "Drag and Drop",
+                    "Aplication Config, Drag and Drop Support window config parameters");
+            row_label_value!(ui => ui.toggle(&mut self.resizable),
+                    "Resizeable",
+                    "Aplication Config, Resizeable Support window config parameters");
+            ui.end_row();
+            row_label_value!(ui => ui.toggle(&mut self.follow_system_theme),
+                    "Follow System Theme",
+                    "Aplication Config, Follow System Theme window config parameters");
+        };
 
-                ui.end_row();
-
-                ui.checkbox(&mut self.drag_and_drop_support, "Drag & Drop Support");
-                ui.checkbox(&mut self.resizable, "Resizable");
-                ui.checkbox(&mut self.transparent, "Transparent");
-                ui.checkbox(&mut self.follow_system_theme, "Follow System Theme");
-            })
-            .response;
-
-        let resp = ui
-            .horizontal_centered(|ui| {
-                ui.selectable_value(&mut self.default_theme, Theme::Dark, "Dark Theme");
-                ui.selectable_value(&mut self.default_theme, Theme::Light, "Light Theme");
-            })
-            .response;
-
-        resps.union(resp)
+        Grid::new("_grid_config_edit")
+            .striped(false)
+            .num_columns(4)
+            .show(ui, ui_grid_appoptions)
+            .response
     }
 }
 

@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use dyno_types::DynoResult;
+use crate::DynoResult;
 use eframe::egui::{mutex::Mutex, pos2, ColorImage, Rect, TextureHandle, TextureOptions};
 
 // ----------------------------------------------------------------------------

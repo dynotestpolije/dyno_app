@@ -1,9 +1,11 @@
 use crate::widgets::button::{ButtonExt, ButtonKind};
+use dyno_core::serde;
 use eframe::egui::{
     Align2, Color32, Context, Id, InnerResponse, Key, LayerId, Order, Vec2, Window,
 };
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(crate = "serde")]
 pub struct ConfirmUnsavedWindow;
 impl ConfirmUnsavedWindow {
     pub fn new() -> Self {
@@ -11,7 +13,12 @@ impl ConfirmUnsavedWindow {
     }
 }
 impl super::WindowState for ConfirmUnsavedWindow {
-    fn show_window(&mut self, ctx: &Context, state: &mut crate::state::DynoState) {
+    fn show_window(
+        &mut self,
+        ctx: &Context,
+        _control: &mut crate::control::DynoControl,
+        state: &mut crate::state::DynoState,
+    ) {
         if state.show_buffer_unsaved() {
             let painter = ctx.layer_painter(LayerId::new(
                 Order::Background,
@@ -52,7 +59,7 @@ impl super::WindowState for ConfirmUnsavedWindow {
                 inner: Some(Some(ButtonKind::Save)),
                 ..
             }) => {
-                state.set_operator(crate::state::OperatorData::save_all());
+                state.set_operator(crate::state::OperatorData::save_default());
                 state.set_show_buffer_unsaved(false);
                 state.set_show_quitable(true);
             }

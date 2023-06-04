@@ -8,6 +8,7 @@ macro_rules! get_assets {
 pub const APP_KEY: &str = "dynotest-app";
 
 pub mod assets {
+    use dyno_core::lazy_static;
 
     macro_rules! declare_static_ico {
         ($($name: ident => $file_name: literal),* $(,)?) => {$(
@@ -68,6 +69,7 @@ pub mod assets {
 
     use crate::widgets::images::{Img, ImgFmt};
     lazy_static::lazy_static! {
+        pub static ref POLIJE_LOGO_PNG:         Img = declare_static_img!(POLIJE_LOGO_PNG:          Png => "logo30.png");
         pub static ref COLORIMAGE_GAUGE_RPM:    Img = declare_static_img!(COLORIMAGE_GAUGE_RPM:     Png => "gauge/dynotest_gauge_rpm-256.png");
         pub static ref COLORIMAGE_GAUGE_SPEED:  Img = declare_static_img!(COLORIMAGE_GAUGE_SPEED:   Png => "gauge/dynotest_gauge_speed-256.png");
         pub static ref COLORIMAGE_GAUGE_TORQUE: Img = declare_static_img!(COLORIMAGE_GAUGE_TORQUE:  Png => "gauge/dynotest_gauge_torque-256.png");
@@ -88,7 +90,7 @@ pub mod assets {
                     })
                 }
                 Err(err) => {
-                    dyno_types::log::error!(
+                    dyno_core::log::error!(
                         "failed to load image in path: {} - {}",
                         $path.display(),
                         err

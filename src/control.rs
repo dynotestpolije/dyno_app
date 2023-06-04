@@ -1,133 +1,134 @@
 use crate::{
-    config::DynoConfig,
+    config::ApplicationConfig,
     paths::DynoPaths,
-    service::{init_serial, SerialService},
-    widgets::{DynoFileManager, MultiRealtimePlot},
+    row_label_value,
+    service::{ApiService, PortInfo, SerialService},
+    state::{DynoFileType, DynoState, OperatorData},
+    toast_error, toast_info, toast_success,
+    widgets::{
+        button::ButtonExt, segment_display::SegmentedDisplay, DynoFileManager, Gauge, RealtimePlot,
+    },
+    AsyncMsg,
 };
-use dyno_types::{
-    data_buffer::{BufferData, Data},
-    infomotor::InfoMotor,
-    DynoResult,
+use dyno_core::{
+    asyncify,
+    chrono::{NaiveDateTime, Utc},
+    crossbeam_channel::{unbounded, Receiver, Sender},
+    ignore_err, serde, BufferData, CompresedSaver, CsvSaver, Data, DynoConfig, DynoResult,
+    ExcelSaver,
 };
 use eframe::egui::*;
-use std::{
-    path::PathBuf,
-    sync::{Arc, RwLock},
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
 };
 
-use crate::state::DynoFileType;
-use serde::{Deserialize, Serialize};
-
-#[derive(Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(crate = "serde")]
 enum PanelSetting {
     #[default]
     Generic,
-    InfoMotor,
+    Config,
     Style,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(crate = "serde")]
 pub struct DynoControl {
-    #[serde(skip)]
-    #[serde(default)]
-    service: Option<SerialService>,
+    pub paths: DynoPaths,
+    pub app_config: ApplicationConfig,
+    pub config: DynoConfig,
 
     #[serde(skip)]
     #[serde(default)]
     buffer: BufferData,
 
-    paths: Arc<RwLock<DynoPaths>>,
-    config: Arc<RwLock<DynoConfig>>,
-    info: Arc<RwLock<InfoMotor>>,
-    panel_setting: PanelSetting,
-    edit_path: bool,
-    buffer_saved: bool,
+    #[serde(skip)]
+    #[serde(default)]
+    serial_service: Option<SerialService>,
 
-    start: Option<dyno_types::chrono::NaiveDateTime>,
+    #[serde(skip)]
+    #[serde(default)]
+    api_service: Option<ApiService>,
+
+    plots: RealtimePlot,
+
+    #[serde(skip)]
+    #[serde(default = "unbounded")]
+    async_channels: (Sender<AsyncMsg>, Receiver<AsyncMsg>),
+
+    #[serde(skip)]
+    start_time: u64,
+
+    #[serde(skip)]
+    pub start: Option<NaiveDateTime>,
+
+    #[serde(skip)]
+    pub stop: Option<NaiveDateTime>,
+
+    #[serde(skip)]
+    #[serde(default)]
+    loadings: Arc<AtomicBool>,
+
+    #[serde(skip)]
+    #[serde(default)]
+    buffer_saved: bool,
 }
+
 impl Default for DynoControl {
     fn default() -> Self {
-        let paths = match DynoPaths::new(crate::PACKAGE_INFO.app_name) {
-            Ok(p) => p,
-            Err(err) => {
-                if !crate::msg_dialog_err!(
-                    OkIgnore => ["Quit the Application", "Ignore the error and continue the Application"],
-                    "Error Initializing Path Config",
-                    "cause: {err}"
-                ) {
-                    dyno_types::log::error!("Quiting Application From error; {err}");
-                    std::process::exit(0);
-                }
-                DynoPaths::default()
-            }
-        };
-        let config = Arc::new(RwLock::new(
-            paths
-                .get_config::<DynoConfig>("config.toml")
-                .unwrap_or_default(),
-        ));
-        Self {
-            config,
-            paths: Arc::new(RwLock::new(paths)),
-            info: Arc::new(RwLock::new(InfoMotor::new())),
-            service: None,
-            buffer: BufferData::new(),
-            panel_setting: PanelSetting::Generic,
-            edit_path: false,
-            buffer_saved: false,
-            start: None,
-        }
+        Self::new()
     }
 }
 
 impl DynoControl {
     pub fn new() -> Self {
-        Self::default()
-    }
+        let paths = DynoPaths::new(crate::PACKAGE_INFO.app_name).unwrap_or_else(|err| {
+            dyno_core::log::error!("{err}");
+            Default::default()
+        });
 
-    #[allow(unused)]
-    pub fn init_serial(&mut self) {
-        self.service = init_serial();
-    }
+        let app_config = paths
+            .get_config::<ApplicationConfig>("app_config.toml")
+            .unwrap_or_else(|err| {
+                dyno_core::log::error!("{err}");
+                Default::default()
+            });
 
-    #[inline]
-    pub fn on_pos_render(&mut self) {
-        if let Some(Ok(serial_data)) = self.service.as_mut().map(|x| x.handle()) {
-            let Ok(info) = self.info.read() else {
-                return;
-            };
-            let data = Data::from_serial(&info, serial_data);
-            self.buffer.push_data(data);
-            self.buffer_saved = false;
+        let config = paths
+            .get_config::<DynoConfig>("config.toml")
+            .unwrap_or_else(|err| {
+                dyno_core::log::error!("Failed to get DynoTests Configuration file ({err})");
+                Default::default()
+            });
+
+        Self {
+            app_config,
+            config,
+            paths,
+            buffer: BufferData::new(),
+            plots: RealtimePlot::new(),
+            buffer_saved: true,
+            async_channels: unbounded(),
+            api_service: ApiService::new().map_or_else(
+                |err| {
+                    toast_error!("{err}");
+                    None
+                },
+                Some,
+            ),
+            serial_service: Default::default(),
+            start_time: Default::default(),
+            start: Default::default(),
+            stop: Default::default(),
+            loadings: Default::default(),
         }
     }
 
     #[inline(always)]
     pub fn last_buffer(&self) -> Data {
-        self.buffer.last()
-    }
-
-    pub fn service(&self) -> Option<&SerialService> {
-        self.service.as_ref()
-    }
-
-    pub fn service_mut(&mut self) -> Option<&mut SerialService> {
-        self.service.as_mut()
-    }
-
-    pub fn reinitialize_service(&mut self) -> DynoResult<()> {
-        self.service = Some(SerialService::new()?);
-        Ok(())
-    }
-
-    pub fn service_start(&mut self) -> DynoResult<'_, ()> {
-        if let Some(ref mut serial) = self.service {
-            self.start = Some(dyno_types::chrono::Utc::now().naive_local());
-            serial.start()?;
-            Ok(())
-        } else {
-            Err(From::from("[ERROR] Serial Port is not Initialize or not Connected!, try to Click on bottom left on 'STATUS' to reinitialize or reconnected"))
-        }
+        self.buffer.last().clone()
     }
 
     #[allow(unused)]
@@ -141,135 +142,416 @@ impl DynoControl {
         &mut self.buffer
     }
 
-    #[inline(always)]
-    pub fn buffer_empty(&self) -> bool {
-        self.buffer.is_empty()
-    }
-
-    #[allow(unused)]
-    #[inline(always)]
-    pub fn info_motor(&self) -> &Arc<RwLock<InfoMotor>> {
-        &self.info
-    }
-
     #[inline]
-    pub fn paths(&self) -> &Arc<RwLock<DynoPaths>> {
-        &self.paths
-    }
-    #[inline]
-    pub fn config(&self) -> &Arc<RwLock<DynoConfig>> {
-        &self.config
+    pub fn start_time(&self) -> String {
+        let seconds = (self.start_time / 1000) % 60;
+        let minutes = (self.start_time / (1000 * 60)) % 60;
+        let hours = (self.start_time / (1000 * 60 * 60)) % 24;
+        format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
     }
 
     // mark return saved if buffer is already saved or buffer is empty
-    pub fn is_buffer_saved(&self) -> bool {
-        self.buffer_saved || self.buffer_empty()
+    pub const fn is_buffer_saved(&self) -> bool {
+        self.buffer_saved || self.buffer.is_empty()
     }
 
     #[inline]
-    pub fn start_time(&self, data: &Data) -> String {
-        if let Some(dt) = self.start {
-            data.time_duration_formatted(dt.time())
-        } else {
-            "00:00:00".to_owned()
-        }
+    pub fn tx(&self) -> &Sender<AsyncMsg> {
+        &self.async_channels.0
+    }
+    #[inline]
+    pub fn rx(&self) -> &Receiver<AsyncMsg> {
+        &self.async_channels.1
+    }
+    #[inline]
+    pub fn api(&self) -> Option<&ApiService> {
+        self.api_service.as_ref()
+    }
+    #[inline]
+    pub fn reconnect_api(&mut self) -> DynoResult<()> {
+        self.api_service = Some(ApiService::new()?);
+        Ok(())
     }
 }
 
 impl DynoControl {
-    #[allow(unused)]
+    #[inline]
+    pub fn on_pos_render(&mut self, state: &mut DynoState) {
+        if let Ok(msg) = self.async_channels.1.try_recv() {
+            match msg {
+                AsyncMsg::OnSerialData(serial_data) => {
+                    self.start_time += serial_data.period as u64;
+                    self.buffer.push_from_serial(&self.config, serial_data);
+                    self.buffer_saved = false;
+                }
+                AsyncMsg::OnOpenBuffer(buffer) => {
+                    self.buffer = *buffer;
+                    self.buffer_saved = false;
+                }
+                AsyncMsg::OnError(err) => {
+                    toast_error!("ERROR HAS OCCURRED - ({err})")
+                }
+                AsyncMsg::OnSavedBuffer(()) => {
+                    self.buffer_saved = true;
+                    if state.quitable() {
+                        state.set_quit(true);
+                    }
+                }
+                AsyncMsg::OnCheckHealthApi(s) => {
+                    if s.is_success() {
+                        toast_success!("API Check Health is Success");
+                    }
+                }
+                AsyncMsg::OnMessage(msg) => toast_info!("{msg}"),
+            }
+        }
+
+        match (state.get_operator(), self.is_buffer_saved()) {
+            // if buffer is saved and operator want to save, do save the buffer, or if buffer
+            // already saved, ignore the operator
+            (OperatorData::SaveFile(tp), false) => self.on_save(tp),
+            // if buffer is saved and operator want to open file, do open the file to buffer,
+            // or is buffer unsaved but operator want ot open file, show popup to save buffer first
+            (OperatorData::OpenFile(tp), true) => self.on_open(tp),
+            (OperatorData::OpenFile(_), false) => state.set_show_buffer_unsaved(true),
+            _ => {}
+        }
+    }
+    pub fn on_save(&mut self, tp: DynoFileType) {
+        use dyno_core::tokio;
+
+        let buffer = self.buffer.clone();
+        let loadings = self.loadings.clone();
+        let tx = self.async_channels.0.clone();
+
+        let dirpath = tp.path(self.paths.get_data_dir_folder("Saved"));
+        tokio::spawn(async move {
+            loadings.store(true, Ordering::Relaxed);
+            match tp {
+                DynoFileType::Dyno => match DynoFileManager::pick_binaries_async(dirpath).await {
+                    Some(file) => match asyncify!(move || buffer.compress_to_path(file.path())) {
+                        Ok(()) => ignore_err!(tx.send(AsyncMsg::OnSavedBuffer(()))),
+                        Err(err) => ignore_err!(tx.send(AsyncMsg::OnError(err))),
+                    },
+                    None => dyno_core::log::debug!("FileManager ppick file canceled"),
+                },
+                DynoFileType::Csv => match DynoFileManager::pick_csv_async(dirpath).await {
+                    Some(file) => match asyncify!(move || buffer.save_csv_from_path(file.path())) {
+                        Ok(()) => ignore_err!(tx.send(AsyncMsg::OnSavedBuffer(()))),
+                        Err(err) => ignore_err!(tx.send(AsyncMsg::OnError(err))),
+                    },
+                    None => dyno_core::log::debug!("FileManager ppick file canceled"),
+                },
+                DynoFileType::Excel => match DynoFileManager::pick_excel_async(dirpath).await {
+                    Some(file) => match asyncify!(move || buffer.save_excel_from_path(file.path()))
+                    {
+                        Ok(()) => ignore_err!(tx.send(AsyncMsg::OnSavedBuffer(()))),
+                        Err(err) => ignore_err!(tx.send(AsyncMsg::OnError(err))),
+                    },
+                    None => dyno_core::log::debug!("FileManager ppick file canceled"),
+                },
+            }
+            loadings.store(false, Ordering::Relaxed);
+        });
+    }
+
+    pub fn on_open(&mut self, tp: DynoFileType) {
+        use dyno_core::tokio;
+
+        let tx = self.async_channels.0.clone();
+        let loadings = self.loadings.clone();
+        let dirpath = tp.path(self.paths.get_data_dir_folder("Saved"));
+
+        tokio::spawn(async move {
+            loadings.store(true, Ordering::Relaxed);
+            match tp {
+                DynoFileType::Dyno => match DynoFileManager::pick_binaries_async(dirpath).await {
+                    Some(file) => {
+                        match asyncify!(move || BufferData::decompress_from_path(file.path())) {
+                            Ok(data) => ignore_err!(tx.send(AsyncMsg::open_buffer(data))),
+                            Err(err) => ignore_err!(tx.send(AsyncMsg::error(err))),
+                        }
+                    }
+                    None => dyno_core::log::debug!("FileManager ppick file canceled"),
+                },
+                DynoFileType::Csv => match DynoFileManager::pick_csv_async(dirpath).await {
+                    Some(file) => {
+                        match asyncify!(move || BufferData::open_csv_from_path(file.path())) {
+                            Ok(data) => ignore_err!(tx.send(AsyncMsg::open_buffer(data))),
+                            Err(err) => ignore_err!(tx.send(AsyncMsg::error(err))),
+                        }
+                    }
+                    None => dyno_core::log::debug!("FileManager ppick file canceled"),
+                },
+                DynoFileType::Excel => match DynoFileManager::pick_excel_async(dirpath).await {
+                    Some(file) => {
+                        match asyncify!(move || BufferData::open_excel_from_path(file.path())) {
+                            Ok(data) => ignore_err!(tx.send(AsyncMsg::open_buffer(data))),
+                            Err(err) => ignore_err!(tx.send(AsyncMsg::error(err))),
+                        }
+                    }
+                    None => dyno_core::log::debug!("FileManager ppick file canceled"),
+                },
+            }
+            loadings.store(false, Ordering::Relaxed);
+        });
+    }
+}
+
+impl DynoControl {
     #[inline(always)]
-    pub fn show_plot(&self, ui: &mut Ui) -> Response {
-        MultiRealtimePlot::new().animate(true).ui(ui, &self.buffer)
+    pub fn bottom_status(&mut self, ui: &mut Ui) {
+        let layout_ui_status = |ltr_ui: &mut Ui| match &mut self.serial_service {
+            Some(serial) => {
+                let (status, color) = if serial.is_open() {
+                    ("STATUS: Running", Color32::YELLOW)
+                } else {
+                    ("STATUS: Connected", Color32::GREEN)
+                };
+                let PortInfo {
+                    port_name,
+                    vid,
+                    pid,
+                    ..
+                }: &PortInfo = serial.get_info();
+                Label::new(RichText::new(status).color(color))
+                    .ui(ltr_ui)
+                    .on_hover_text(format!("PORT INFO: [{port_name}] ({vid}:{pid})"));
+                ltr_ui.separator();
+                let btn_start = ltr_ui
+                    .small_play_button()
+                    .on_hover_text("Click to Start the Service");
+                let btn_stop = ltr_ui
+                    .small_stop_button()
+                    .on_hover_text("Click to Stop/Pause the Service");
+                let btn_reset = ltr_ui
+                    .small_reset_button()
+                    .on_hover_text("Click to Reset recorded data buffer");
+                match (
+                    btn_start.clicked(),
+                    btn_stop.clicked(),
+                    btn_reset.clicked(),
+                    serial.is_open(),
+                ) {
+                    (true, _, _, false) => {
+                        if let Err(err) = serial.start(self.async_channels.0.clone()) {
+                            toast_error!("Serial Service Failed to start - {err}")
+                        }
+                        self.start = Some(Utc::now().naive_utc());
+                    }
+                    (_, true, _, true) => {
+                        serial.stop();
+                        self.stop = Some(Utc::now().naive_utc());
+                    }
+                    (_, _, true, true) => {
+                        serial.stop();
+                        self.buffer.clean();
+                    }
+                    _ => (),
+                }
+            }
+            None => {
+                Label::new(RichText::new("STATUS: Not Initialize / Connected").color(Color32::RED))
+                    .sense(Sense::union(Sense::click(), Sense::hover()))
+                    .ui(ltr_ui)
+                    .on_hover_text(
+                        "PORT INFO: [NO PORT DETECTED] (XX:XX), click to try Initialize the port",
+                    );
+                if ltr_ui.button("\u{1F50C} Try Reconnect").clicked() {
+                    self.serial_service = match SerialService::new() {
+                        Ok(serial) => {
+                            toast_success!(
+                                "SUCCES! connected to [{}] - [{}:{}]",
+                                serial.info.port_name,
+                                serial.info.vid,
+                                serial.info.pid
+                            );
+                            Some(serial)
+                        }
+                        Err(err) => {
+                            toast_error!("Failed to Start Serial - ({err})");
+                            None
+                        }
+                    };
+                }
+            }
+        };
+        ui.with_layout(Layout::left_to_right(Align::Center), layout_ui_status);
+        ui.separator();
+        ui.with_layout(Layout::right_to_left(Align::Center), |rtl_ui| {
+            rtl_ui.small(format!("Active Info: {}", self.config.motor_type));
+        });
     }
-}
 
-impl DynoControl {
+    pub fn left_panel(&mut self, ui: &mut Ui) {
+        let Data {
+            speed,
+            torque,
+            horsepower,
+            rpm_roda,
+            rpm_engine,
+            temp,
+            odo,
+            percepatan_sudut,
+            percepatan_roller,
+            ..
+        } = self.buffer.last();
+
+        let grid_ui = |grid_ui: &mut Ui| {
+            row_label_value!(
+                grid_ui,
+                speed,
+                "Speed",
+                "calculated from rotational speed distance of the roller in dynotests chasis"
+            );
+            row_label_value!(
+                grid_ui,
+                rpm_engine,
+                "Rpm Engine",
+                "calculated from rpm counter driver in dynotests chasis",
+            );
+            grid_ui.end_row();
+            row_label_value!(
+                grid_ui,
+                rpm_engine,
+                "Rpm ENgine (Mesin)",
+                "calculated from rotational engine from rpm driver sensor in dynotests chasis",
+            );
+            row_label_value!(
+                grid_ui,
+                rpm_roda,
+                "Rpm Tire (Roda)",
+                "calculated from rotational of the roller in dynotests",
+            );
+            grid_ui.end_row();
+            row_label_value!(
+                grid_ui,
+                torque,
+                "Torque",
+                "calculated from rotational speed of the roller in dynotests chasis",
+            );
+            row_label_value!(
+                grid_ui,
+                horsepower,
+                "HorsePower",
+                "calculated from rotational speed of the roller in dynotests chasis",
+            );
+            grid_ui.end_row();
+            row_label_value!(
+                grid_ui,
+                odo,
+                "ODO (Jarak Tempuh)",
+                r#"
+Distance Traveled / Jarak Tempuh calculated distance 
+from rotational rounds of the roller in dynotests chasis
+                "#,
+            );
+            row_label_value!(
+                grid_ui,
+                temp,
+                "Engine Temperature",
+                "calculated from thermocouple sensor driver in dynotests chasis",
+            );
+            grid_ui.end_row();
+            row_label_value!(
+                grid_ui,
+                percepatan_sudut,
+                "Angular Velocity",
+                "calculated from angular rotational roller in dynotests chasis",
+            );
+            row_label_value!(
+                grid_ui,
+                percepatan_roller,
+                "Roller Velocity",
+                "calculated Roller velocity in dynotests chasis",
+            );
+        };
+        ui.columns(2, |uis| {
+            uis[0].add(Gauge::speed(*speed).diameter(uis[0].available_width()));
+            uis[1].add(Gauge::rpm_engine(*rpm_engine).diameter(uis[1].available_width()));
+        });
+        CollapsingHeader::new("Gauges Other")
+            .id_source("dyno_gauges_other_collapse_id")
+            .show(ui, |ui| {
+                ui.columns(3, |uis| {
+                    uis[0].add(Gauge::horsepower(*horsepower).diameter(uis[0].available_width()));
+                    uis[1].add(Gauge::rpm_roda(*rpm_roda).diameter(uis[1].available_width()));
+                    uis[2].add(Gauge::torque(*torque).diameter(uis[2].available_width()));
+                });
+            });
+        ui.vertical_centered(|ui| {
+            Grid::new("dyno_left_values_grid_id")
+                .num_columns(4)
+                .spacing([ui.available_width() / 9.5, 4.0])
+                .striped(true)
+                .show(ui, grid_ui);
+        });
+    }
+
+    pub fn right_panel(&mut self, ui: &mut Ui) {
+        let Data {
+            speed,
+            rpm_engine,
+            odo,
+            ..
+        } = self.buffer.last();
+        const MULTPL_WIDTH: f32 = 0.19;
+        const HEADING_SEGMENTS: [&str; 4] =
+            ["Speed (km/h)", "RPM x 1000", "ODO (km)", "Time (HH:MM:SS)"];
+        let value_segments = [
+            format!("{:7.2}", speed.value()),
+            format!("{:7.2}", rpm_engine.value() * 0.001),
+            format!("{:7.2}", odo.value()),
+            self.start_time(),
+        ];
+        let iter_segmented_ui = |(idx, segment_ui): (usize, &mut Ui)| {
+            segment_ui.group(|uigroup_inner| {
+                uigroup_inner.vertical_centered(|uivert_inner| {
+                    uivert_inner.strong(HEADING_SEGMENTS[idx]);
+                    let digit_height = uivert_inner.available_width() * MULTPL_WIDTH;
+                    SegmentedDisplay::dyno_seven_segment(&value_segments[idx])
+                        .style_preset(self.app_config.segment_display_style)
+                        .digit_height(digit_height)
+                        .ui(uivert_inner);
+                });
+            });
+        };
+        ui.columns(4, |segments_ui| {
+            segments_ui
+                .iter_mut()
+                .enumerate()
+                .for_each(iter_segmented_ui);
+        });
+        ui.separator();
+        self.plots.ui(ui, &self.buffer);
+    }
+
     #[inline]
-    fn saves(&mut self, types: DynoFileType, file: PathBuf) -> DynoResult<Option<PathBuf>> {
-        match types {
-            DynoFileType::Binaries => self.buffer.serialize_to_file(&file)?,
-            DynoFileType::Csv => self.buffer.save_as_csv(&file)?,
-            DynoFileType::Excel => self.buffer.save_as_excel(&file)?,
-            _ => (),
-        };
-        self.buffer_saved = true;
-        Ok(Some(file))
-    }
-    pub fn on_save(&mut self, tp: DynoFileType) -> DynoResult<Option<PathBuf>> {
-        let dirpath = {
-            let Ok(path_manager) = self.paths.read() else {
-                return Err(From::from("ERROR on reading/lock RwLock of path_manager"));
-            };
-            tp.path(path_manager.get_data_dir_folder("Saved"))
-        };
-        match tp {
-            DynoFileType::All => match DynoFileManager::pick_all_type(dirpath) {
-                Some(file) => match file.extension().map(|osstr| osstr.to_str().unwrap_or("")) {
-                    Some("bin") | Some("dbin") => self.saves(DynoFileType::Binaries, file),
-                    Some("csv") | Some("dynocsv") => self.saves(DynoFileType::Csv, file),
-                    Some("xlsx") => self.saves(DynoFileType::Excel, file),
-                    _ => Ok(None),
-                },
-                None => Ok(None),
-            },
-            DynoFileType::Binaries => match DynoFileManager::pick_binaries(dirpath) {
-                Some(file) => self.saves(tp, file),
-                None => Ok(None),
-            },
-            DynoFileType::Csv => match DynoFileManager::pick_csv(dirpath) {
-                Some(file) => self.saves(tp, file),
-                None => Ok(None),
-            },
-            DynoFileType::Excel => match DynoFileManager::pick_excel(dirpath) {
-                Some(file) => self.saves(tp, file),
-                None => Ok(None),
-            },
-        }
-    }
-
-    fn opens(&mut self, types: DynoFileType, file: PathBuf) -> DynoResult<Option<PathBuf>> {
-        self.buffer.clean();
-        self.buffer = match types {
-            DynoFileType::Binaries => BufferData::deserialize_from_file(&file)?,
-            DynoFileType::Csv => BufferData::open_from_csv(&file)?,
-            DynoFileType::Excel => BufferData::open_from_excel(&file)?,
-            _ => return Ok(None),
-        };
-        Ok(Some(file))
-    }
-    pub fn on_open(&mut self, tp: DynoFileType) -> DynoResult<Option<PathBuf>> {
-        let dirpath = {
-            let Ok(path_manager) = self.paths.read() else {
-                return Err(From::from("ERROR on reading/lock RwLock of path_manager"));
-            };
-            tp.path(path_manager.get_data_dir_folder("Saved"))
-        };
-        match tp {
-            DynoFileType::All => match DynoFileManager::pick_all_type(dirpath) {
-                Some(file) => match file.extension().map(|osstr| osstr.to_str().unwrap_or("")) {
-                    Some("bin") | Some("dbin") => self.opens(DynoFileType::Binaries, file),
-                    Some("csv") | Some("dynocsv") => self.opens(DynoFileType::Csv, file),
-                    Some("xlsx") => self.opens(DynoFileType::Excel, file),
-                    _ => Ok(None),
-                },
-                None => Ok(None),
-            },
-            DynoFileType::Binaries => match DynoFileManager::pick_binaries(dirpath) {
-                Some(file) => self.opens(tp, file),
-                None => Ok(None),
-            },
-            DynoFileType::Csv => match DynoFileManager::pick_csv(dirpath) {
-                Some(file) => self.opens(tp, file),
-                None => Ok(None),
-            },
-            DynoFileType::Excel => match DynoFileManager::pick_excel(dirpath) {
-                Some(file) => self.opens(tp, file),
-                None => Ok(None),
-            },
+    pub fn handle_states(&mut self, ctx: &Context) {
+        if self.loadings.load(Ordering::Relaxed) {
+            ctx.layer_painter(LayerId::new(
+                Order::Background,
+                Id::new("confirmation_popup_unsaved"),
+            ))
+            .rect_filled(
+                ctx.input(|inp| inp.screen_rect()),
+                0.0,
+                Color32::from_black_alpha(192),
+            );
+            Area::new("dyno_global_loading_spinner")
+                .order(Order::Foreground)
+                .anchor(Align2::CENTER_CENTER, Vec2::new(0.0, 0.0))
+                .show(ctx, |ui| {
+                    ui.add(
+                        Spinner::new()
+                            .color(crate::COLOR_BLUE_DYNO)
+                            .size(ctx.available_rect().height() / 2.),
+                    )
+                });
         }
     }
 }
+
 impl AsRef<DynoControl> for DynoControl {
     #[inline(always)]
     fn as_ref(&self) -> &Self {

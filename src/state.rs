@@ -1,10 +1,11 @@
 use crate::widgets::button::ButtonExt as _;
-use dyno_types::paste::paste;
+use dyno_core::AsStr;
+use dyno_core::{paste::paste, serde};
 
 #[derive(Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(crate = "serde")]
 pub enum DynoFileType {
-    All,
-    Binaries,
+    Dyno,
     Csv,
     Excel,
 }
@@ -15,25 +16,36 @@ impl std::fmt::Display for DynoFileType {
     }
 }
 
-impl DynoFileType {
-    #[inline(always)]
-    pub const fn as_str(self) -> &'static str {
+impl AsStr<'static> for DynoFileType {
+    #[inline]
+    fn as_str(&self) -> &'static str {
         match self {
-            DynoFileType::All => "All",
-            DynoFileType::Binaries => "Binaries",
+            DynoFileType::Dyno => "Binaries",
             DynoFileType::Csv => "Csv",
             DynoFileType::Excel => "Excel",
         }
     }
+}
+
+impl DynoFileType {
     pub fn path<P>(self, parent: P) -> std::path::PathBuf
     where
         P: AsRef<std::path::Path>,
     {
         parent.as_ref().join(self.as_str())
     }
+    pub fn from_extension(ext: &str) -> Option<Self> {
+        match ext {
+            "dyno" | "dbin" => Some(Self::Dyno),
+            "csv" | "dynocsv" => Some(Self::Csv),
+            "xlsx" => Some(Self::Excel),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(crate = "serde")]
 pub enum OperatorData {
     #[default]
     Noop,
@@ -41,8 +53,8 @@ pub enum OperatorData {
     OpenFile(DynoFileType),
 }
 impl OperatorData {
-    pub fn save_all() -> Self {
-        Self::SaveFile(DynoFileType::All)
+    pub fn save_default() -> Self {
+        Self::SaveFile(DynoFileType::Dyno)
     }
 
     #[inline]
@@ -54,6 +66,7 @@ impl OperatorData {
 }
 
 #[derive(Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[serde(crate = "serde")]
 pub struct DynoState {
     #[serde(skip)]
     operator: OperatorData,
@@ -65,6 +78,9 @@ pub struct DynoState {
     show_left_panel: bool,
     show_logger_window: bool,
     show_buffer_unsaved: bool,
+    show_auth_window: bool,
+
+    show_save_server: bool,
 
     #[serde(skip)]
     show_quitable: bool,
@@ -85,6 +101,9 @@ impl Default for DynoState {
             show_bottom_panel: true,
             show_left_panel: true,
             show_buffer_unsaved: false,
+            show_auth_window: false,
+
+            show_save_server: false,
             show_quitable: false,
             quitable: false,
             quit: false,
@@ -101,6 +120,9 @@ impl_cond_all!(
     show_bottom_panel   : bool => false,
     show_buffer_unsaved : bool => false,
     show_quitable       : bool => false,
+    show_auth_window    : bool => false,
+    show_save_server    : bool => false,
+
     quitable            : bool => false,
     quit                : bool => false,
 );
@@ -124,46 +146,46 @@ impl DynoState {
 impl DynoState {
     #[inline]
     pub fn menubar(&mut self, ui: &mut eframe::egui::Ui) {
-        use dyno_types::log as LOG;
+        use crate::log as LOG;
         ui.menu_button("File", |menu_ui| {
             if menu_ui.open_button().clicked() {
-                LOG::info!("Open Button menu clicked");
-                self.operator = OperatorData::OpenFile(DynoFileType::Binaries);
+                LOG::debug!("Open Button menu clicked");
+                self.operator = OperatorData::OpenFile(DynoFileType::Dyno);
             }
             menu_ui.menu_button("Open As..", |submenu_ui| {
                 if submenu_ui.button("Csv File").clicked() {
                     self.operator = OperatorData::OpenFile(DynoFileType::Csv);
-                    LOG::info!("Open as Csv file submenu clicked");
+                    LOG::debug!("Open as Csv file submenu clicked");
                 }
                 if submenu_ui.button("Excel File").clicked() {
                     self.operator = OperatorData::OpenFile(DynoFileType::Excel);
-                    LOG::info!("Open as Excel file submenu clicked");
+                    LOG::debug!("Open as Excel file submenu clicked");
                 }
                 if submenu_ui.button("Binaries File").clicked() {
-                    self.operator = OperatorData::OpenFile(DynoFileType::Binaries);
-                    LOG::info!("Open as Binaries file submenu clicked");
+                    self.operator = OperatorData::OpenFile(DynoFileType::Dyno);
+                    LOG::debug!("Open as Binaries file submenu clicked");
                 }
             });
             if menu_ui.save_button().clicked() {
-                LOG::info!("Save file menu clicked");
-                self.operator = OperatorData::SaveFile(DynoFileType::Binaries);
+                LOG::debug!("Save file menu clicked");
+                self.operator = OperatorData::SaveFile(DynoFileType::Dyno);
             }
             menu_ui.menu_button("Save As..", |submenu_ui| {
                 if submenu_ui.button("Csv File").clicked() {
-                    LOG::info!("Save as Csv file submenu clicked");
+                    LOG::debug!("Save as Csv file submenu clicked");
                     self.operator = OperatorData::SaveFile(DynoFileType::Csv);
                 }
                 if submenu_ui.button("Excel File").clicked() {
-                    LOG::info!("Save as Excel file submenu clicked");
+                    LOG::debug!("Save as Excel file submenu clicked");
                     self.operator = OperatorData::SaveFile(DynoFileType::Excel);
                 }
                 if submenu_ui.button("Binaries File").clicked() {
-                    LOG::info!("Save as Binaries file submenu clicked");
-                    self.operator = OperatorData::SaveFile(DynoFileType::Binaries);
+                    LOG::debug!("Save as Binaries file submenu clicked");
+                    self.operator = OperatorData::SaveFile(DynoFileType::Dyno);
                 }
             });
             if menu_ui.button("Quit").clicked() {
-                LOG::info!("Exit submenu clicked");
+                LOG::debug!("Exit submenu clicked");
                 self.set_show_quitable(true);
             }
         });
@@ -173,17 +195,33 @@ impl DynoState {
             submenu_ui.checkbox(&mut self.show_logger_window, "Logger Window");
         });
         if ui.button("Config").clicked() {
-            LOG::info!("Config submenu clicked");
+            LOG::debug!("Config submenu clicked");
             self.show_config = !self.show_config;
         }
         if ui.button("Help").clicked() {
-            LOG::info!("Help submenu clicked");
+            LOG::debug!("Help submenu clicked");
             self.show_config = !self.show_config;
         }
         if ui.button("About").clicked() {
-            LOG::info!("About submenu clicked");
+            LOG::debug!("About submenu clicked");
             self.show_about = !self.show_about;
         }
+    }
+
+    pub fn key_events(&mut self, ctx: &eframe::egui::Context) {
+        use eframe::egui::{Key, Modifiers};
+        ctx.input_mut(|i| {
+            if i.consume_key(
+                Modifiers {
+                    ctrl: true,
+                    shift: true,
+                    ..Default::default()
+                },
+                Key::S,
+            ) {
+                self.operator = OperatorData::save_default();
+            }
+        });
     }
 }
 
@@ -223,6 +261,12 @@ macro_rules! impl_cond_setter_getter {
                 #[inline(always)]
                 pub fn [<set_ $name>](&mut self, val: $tp) {
                     self.$name = val;
+                }
+
+                #[allow(unused)]
+                #[inline(always)]
+                pub fn [<swap_ $name>](&mut self) {
+                    self.$name = !self.$name;
                 }
             )*);
         }

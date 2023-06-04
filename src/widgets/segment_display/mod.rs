@@ -7,7 +7,7 @@ pub use metrics::{DisplayMetrics, DisplayMetricsPreset};
 pub use segments::{NineSegment, SevenSegment, SixteenSegment};
 pub use widget::SegmentedDisplay;
 
-use dyno_types::derive_more::Display;
+use dyno_core::derive_more::Display;
 
 // ----------------------------------------------------------------------------
 

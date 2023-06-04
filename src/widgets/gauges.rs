@@ -1,16 +1,16 @@
-use dyno_types::Numeric;
+use dyno_core::Numeric;
 use eframe::egui::*;
 use eframe::emath::Rot2;
 
 #[derive(Debug, Clone)]
-pub struct Gauges {
+pub struct Gauge {
     value: f32,
     diameter: Option<f32>,
 
     types: GaugeTypes,
     animated: bool,
 }
-impl Gauges {
+impl Gauge {
     pub fn new(preset: GaugeTypes, value: f32) -> Self {
         Self {
             value,
@@ -24,8 +24,12 @@ impl Gauges {
         Self::new(GaugeTypes::SpeedGauge, value.to_f32()).animated(true)
     }
 
-    pub fn rpm(value: impl Numeric) -> Self {
-        Self::new(GaugeTypes::RpmGauge, value.to_f32()).animated(true)
+    pub fn rpm_roda(value: impl Numeric) -> Self {
+        // map value from 1000 to 1 ( value *  1000 )
+        Self::new(GaugeTypes::RpmRodaGauge, value.to_f32() * 0.001).animated(true)
+    }
+    pub fn rpm_engine(value: impl Numeric) -> Self {
+        Self::new(GaugeTypes::RpmEngineGauge, value.to_f32() * 0.001).animated(true)
     }
 
     pub fn torque(value: impl Numeric) -> Self {
@@ -46,7 +50,7 @@ impl Gauges {
     }
 }
 
-impl Widget for Gauges {
+impl Widget for Gauge {
     fn ui(self, ui: &mut Ui) -> Response {
         let Self {
             value,
@@ -151,7 +155,8 @@ impl GaugeBG<'_> {
         };
         match types {
             GaugeTypes::Default => GaugeBG::Color(Color32::from_black_alpha(200)),
-            GaugeTypes::RpmGauge => GaugeBG::Image(&COLORIMAGE_GAUGE_RPM),
+            GaugeTypes::RpmRodaGauge => GaugeBG::Image(&COLORIMAGE_GAUGE_RPM),
+            GaugeTypes::RpmEngineGauge => GaugeBG::Image(&COLORIMAGE_GAUGE_RPM),
             GaugeTypes::SpeedGauge => GaugeBG::Image(&COLORIMAGE_GAUGE_SPEED),
             GaugeTypes::TorqueGauge => GaugeBG::Image(&COLORIMAGE_GAUGE_TORQUE),
             GaugeTypes::HorsepowerGauge => GaugeBG::Image(&COLORIMAGE_GAUGE_HP),
@@ -201,7 +206,8 @@ impl GaugePreset {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GaugeTypes {
     Default,
-    RpmGauge,
+    RpmRodaGauge,
+    RpmEngineGauge,
     SpeedGauge,
     TorqueGauge,
     HorsepowerGauge,
@@ -211,11 +217,19 @@ impl GaugeTypes {
     pub const fn presets(&self, vis: &Visuals) -> GaugePreset {
         match self {
             GaugeTypes::Default => GaugePreset::from_system(vis),
-            GaugeTypes::RpmGauge => GaugePreset {
+            GaugeTypes::RpmRodaGauge => GaugePreset {
                 needle_color: Color32::from_rgb(0, 204, 255),
                 foreground_color: Color32::from_rgb(85, 221, 255),
                 min: 0f32,
-                max: 150f32,
+                max: 15f32,
+                min_degree: 0f32,
+                max_degree: 270f32,
+            },
+            GaugeTypes::RpmEngineGauge => GaugePreset {
+                needle_color: Color32::from_rgb(0, 204, 255),
+                foreground_color: Color32::from_rgb(85, 221, 255),
+                min: 0f32,
+                max: 15f32,
                 min_degree: 0f32,
                 max_degree: 270f32,
             },
@@ -252,7 +266,8 @@ impl std::fmt::Display for GaugeTypes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             GaugeTypes::Default => f.write_str("Gauge Widget"),
-            GaugeTypes::RpmGauge => f.write_str("Rpm Gauge"),
+            GaugeTypes::RpmRodaGauge => f.write_str("Rpm Roda Gauge"),
+            GaugeTypes::RpmEngineGauge => f.write_str("Rpm Engine Gauge"),
             GaugeTypes::SpeedGauge => f.write_str("Speed Gauge"),
             GaugeTypes::TorqueGauge => f.write_str("Torque Gauge"),
             GaugeTypes::HorsepowerGauge => f.write_str("Torque Gauge"),

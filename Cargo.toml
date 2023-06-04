@@ -3,7 +3,7 @@
 name = "dynotest_app"
 description = "Dynotest GUI Application"
 version = "0.0.1"
-authors = ["Rizal Achmad Pahlevi <rizal.ahmadp@gmail.com>"]
+authors = ["Rizal Achmad Pahlevi <echo 'cml6YWwuYWhtYWRwQGdtYWlsLmNvbQo=' | base64 -d>"]
 edition = "2021"
 readme = "README.md"
 repository = "https://github.com/dynotestpolije/dyno_app"
@@ -11,54 +11,38 @@ repository = "https://github.com/dynotestpolije/dyno_app"
 [features]
 default = ["images"]
 images = ["dep:image"]
-use_plotter = ["dep:plotters"]
-barcodes = ["dep:barcoders", "dep:datamatrix", "dep:qrcode"]
+# use_plotter = ["dep:plotters"]
 dbg_log  = []
 
 
 [dependencies]
-serde       = { version = "1", features = ["derive"] }
-bytes       = { version = "1" }
-directories = { version = "5" }
 
-itertools   = { version = "0.10" }
-serialport  = { version = "4.2"  }
-lazy_static = { version = "1.4" }
+directories  = { version = "5.0.1" }
+serialport   = { version = "4.2.1" }
+url          = { version = "2.3.1" }
+futures      = { version = "0.3"}
+
+[dependencies.rfd]
+version = "0.11"
+default-features = false
+features = ["gtk3"]
+
+[dependencies.itertools]
+version = "0.10.5"
+default-features = false
+features = ["use_std"]
 
 [dependencies.eframe]
 path = "egui/crates/eframe"
 default-features = true
-features = ["persistence", "dark-light"]
+features = ["persistence"]
 
-[dependencies.dyno_types]
+[dependencies.dyno_core]
 # if in release change to git url main branch
 # git = "https://github.com/dynotestpolije/dyno_types.git"
 # branch = "main" 
-path = "../dyno_types"
-features = ["frontend"]
-
-[dependencies.rfd]
-version = "0.11"
-# default-features = false
-# features = ["xdg-portal"]
-
-[dependencies.barcoders]
-version = "1.0"
-optional = true
-
-[dependencies.datamatrix]
-version = "0.3"
-optional = true
-default-features = false
-
-[dependencies.qrcode]
-version = "0.12"
-optional = true
-default-features = false
-
-[dependencies.plotters]
-version = "0.3"
-optional = true
+path = "../dyno_core"
+features = ["frontend", "checksum", "use_async", "use_excel", "use_log"]
 
 [dependencies.image]
 version = "0.24"

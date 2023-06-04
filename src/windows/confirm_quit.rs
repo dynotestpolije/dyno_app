@@ -1,9 +1,11 @@
 use crate::widgets::button::ButtonExt;
+use dyno_core::serde;
 use eframe::egui::{
     Align2, Color32, Context, Id, InnerResponse, Key, LayerId, Order, Ui, Vec2, Window,
 };
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(crate = "serde")]
 pub struct ConfirmQuitWindow;
 impl ConfirmQuitWindow {
     pub fn new() -> Self {
@@ -12,7 +14,12 @@ impl ConfirmQuitWindow {
 }
 
 impl super::WindowState for ConfirmQuitWindow {
-    fn show_window(&mut self, ctx: &Context, state: &mut crate::state::DynoState) {
+    fn show_window(
+        &mut self,
+        ctx: &Context,
+        _control: &mut crate::control::DynoControl,
+        state: &mut crate::state::DynoState,
+    ) {
         if state.show_quitable() {
             ctx.layer_painter(LayerId::new(
                 Order::Background,

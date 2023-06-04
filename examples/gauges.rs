@@ -1,4 +1,4 @@
-use dynotest_app::widgets::gauges::{GaugeTypes, Gauges};
+use dynotest_app::widgets::{Gauge, GaugeTypes};
 use eframe::epaint::Vec2;
 
 fn main() {
@@ -24,7 +24,7 @@ fn main() {
 
 struct ExampleGauge {
     value: f32,
-    presets: [GaugeTypes; 5],
+    presets: [GaugeTypes; 6],
 }
 
 impl ExampleGauge {
@@ -33,7 +33,8 @@ impl ExampleGauge {
             value: 0f32,
             presets: [
                 GaugeTypes::Default,
-                GaugeTypes::RpmGauge,
+                GaugeTypes::RpmRodaGauge,
+                GaugeTypes::RpmEngineGauge,
                 GaugeTypes::SpeedGauge,
                 GaugeTypes::TorqueGauge,
                 GaugeTypes::HorsepowerGauge,
@@ -47,7 +48,7 @@ impl eframe::App for ExampleGauge {
         eframe::egui::CentralPanel::default().show(ctx, |ui| {
             let width = (ui.available_size().x / 4.) - 6.;
             for preset in self.presets {
-                Gauges::new(preset, self.value)
+                Gauge::new(preset, self.value)
                     .animated(true)
                     .diameter(width);
             }

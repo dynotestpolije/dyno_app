@@ -7,6 +7,8 @@ opt-level = 2
 
 [env]
 APPLICATION_NAME_PRETTY = "Dynotest Application"
+API_SERVER_URL = "http://0.0.0.0:8080"
+
 [patch.crates-io]
 
 # [package.metadata.bundle]
