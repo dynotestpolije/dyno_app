@@ -4,6 +4,7 @@ pub mod confirm_quit;
 pub mod confirm_unsaved;
 pub mod help;
 pub mod logger;
+pub mod save_server;
 pub mod setting;
 
 #[cfg(debug_assertions)]
@@ -30,6 +31,7 @@ pub fn window_states_new() -> Vec<Box<dyn WindowState>> {
         Box::new(confirm_unsaved::ConfirmUnsavedWindow::new()),
         Box::new(help::HelpWindow::new()),
         Box::new(logger::LoggerWindow::new()),
+        Box::new(save_server::SaveServerWindow::new()),
         Box::new(setting::SettingWindow::new()),
     ]
 }

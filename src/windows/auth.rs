@@ -1,4 +1,4 @@
-use crate::widgets::DynoWidgets;
+use crate::{toast_error, toast_warn, widgets::DynoWidgets};
 use dyno_core::{
     role::Roles,
     users::{UserLogin, UserRegistration},
@@ -161,7 +161,7 @@ impl super::WindowState for AuthWindow {
     fn show_window(
         &mut self,
         ctx: &eframe::egui::Context,
-        _control: &mut crate::control::DynoControl,
+        control: &mut crate::control::DynoControl,
         state: &mut crate::state::DynoState,
     ) {
         if state.show_auth_window() {
@@ -195,32 +195,40 @@ impl super::WindowState for AuthWindow {
                 ui.vertical_centered_justified(|vertui| {
                     vertui.add_space(10.);
                     let section_opp = self.section.opposite();
-                    if vertui
-                        .add(
-                            Button::new(RichText::new(section_opp.as_str()).color(Color32::BLACK))
-                                .rounding(Rounding::same(4.))
-                                .fill(Color32::LIGHT_BLUE),
-                        )
-                        .clicked()
-                    {
+                    let btn_section = vertui.add(
+                        Button::new(RichText::new(section_opp.as_str()).color(Color32::BLACK))
+                            .rounding(Rounding::same(4.))
+                            .fill(Color32::LIGHT_BLUE),
+                    );
+                    if btn_section.clicked() {
                         self.section = section_opp;
                     }
+
                     vertui.add_space(30.);
                     match self.section {
                         AuthSection::Login => self.login.ui(vertui),
                         AuthSection::Register => self.register.ui(vertui),
                     }
+
                     vertui.add_space(30.);
-                    let btn_size = vec2(280., 30.);
-                    if vertui
-                        .add(
-                            Button::new(RichText::new("Submit").color(Color32::BLACK))
-                                .rounding(Rounding::same(4.))
-                                .fill(Color32::LIGHT_BLUE)
-                                .min_size(btn_size),
-                        )
-                        .clicked()
-                    {}
+                    let submit_btn = vertui.add(
+                        Button::new(RichText::new("Submit").color(Color32::BLACK))
+                            .rounding(Rounding::same(4.))
+                            .fill(Color32::LIGHT_BLUE)
+                            .min_size(vec2(280., 30.)),
+                    );
+
+                    if submit_btn.clicked() {
+                        match control.api() {
+                            Some(api) => api.login(self.login.data.clone(), control.tx().clone()),
+                            None => {
+                                toast_warn!("Aplication not connected Api Server - trying reconnecting.. and try again.");
+                                if let Err(err) = control.reconnect_api() {
+                                    toast_error!("Failed to reconnect to Api - {err}");
+                                }
+                            }
+                        }
+                    }
                     vertui.add_space(10.);
                 });
             });

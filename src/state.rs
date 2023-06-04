@@ -1,10 +1,10 @@
 use crate::widgets::button::ButtonExt as _;
+use dyno_core::AsStr;
 use dyno_core::{paste::paste, serde};
 
 #[derive(Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(crate = "serde")]
 pub enum DynoFileType {
-    All,
     Dyno,
     Csv,
     Excel,
@@ -16,21 +16,31 @@ impl std::fmt::Display for DynoFileType {
     }
 }
 
-impl DynoFileType {
-    #[inline(always)]
-    pub const fn as_str(self) -> &'static str {
+impl AsStr<'static> for DynoFileType {
+    #[inline]
+    fn as_str(&self) -> &'static str {
         match self {
-            DynoFileType::All => "All",
             DynoFileType::Dyno => "Binaries",
             DynoFileType::Csv => "Csv",
             DynoFileType::Excel => "Excel",
         }
     }
+}
+
+impl DynoFileType {
     pub fn path<P>(self, parent: P) -> std::path::PathBuf
     where
         P: AsRef<std::path::Path>,
     {
         parent.as_ref().join(self.as_str())
+    }
+    pub fn from_extension(ext: &str) -> Option<Self> {
+        match ext {
+            "dyno" | "dbin" => Some(Self::Dyno),
+            "csv" | "dynocsv" => Some(Self::Csv),
+            "xlsx" => Some(Self::Excel),
+            _ => None,
+        }
     }
 }
 
@@ -43,8 +53,8 @@ pub enum OperatorData {
     OpenFile(DynoFileType),
 }
 impl OperatorData {
-    pub fn save_all() -> Self {
-        Self::SaveFile(DynoFileType::All)
+    pub fn save_default() -> Self {
+        Self::SaveFile(DynoFileType::Dyno)
     }
 
     #[inline]
@@ -70,7 +80,7 @@ pub struct DynoState {
     show_buffer_unsaved: bool,
     show_auth_window: bool,
 
-    global_loading: bool,
+    show_save_server: bool,
 
     #[serde(skip)]
     show_quitable: bool,
@@ -93,7 +103,7 @@ impl Default for DynoState {
             show_buffer_unsaved: false,
             show_auth_window: false,
 
-            global_loading: false,
+            show_save_server: false,
             show_quitable: false,
             quitable: false,
             quit: false,
@@ -111,8 +121,8 @@ impl_cond_all!(
     show_buffer_unsaved : bool => false,
     show_quitable       : bool => false,
     show_auth_window    : bool => false,
+    show_save_server    : bool => false,
 
-    global_loading      : bool => false,
     quitable            : bool => false,
     quit                : bool => false,
 );
@@ -209,7 +219,7 @@ impl DynoState {
                 },
                 Key::S,
             ) {
-                self.operator = OperatorData::save_all();
+                self.operator = OperatorData::save_default();
             }
         });
     }

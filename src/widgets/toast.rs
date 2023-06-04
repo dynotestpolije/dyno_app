@@ -238,9 +238,10 @@ impl Toast {
     }
 
     pub(crate) fn adjust_next_pos(&self, pos: &mut Pos2, anchor: Anchor, spacing: f32) {
-        match anchor {
-            Anchor::TopRight | Anchor::TopLeft => pos.y += self.height + spacing,
-            Anchor::BottomRight | Anchor::BottomLeft => pos.y -= self.height + spacing,
+        if matches!(anchor, Anchor::TopRight | Anchor::TopLeft) {
+            pos.y += self.height + spacing
+        } else {
+            pos.y -= self.height + spacing
         }
     }
 }

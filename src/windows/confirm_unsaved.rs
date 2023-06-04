@@ -59,7 +59,7 @@ impl super::WindowState for ConfirmUnsavedWindow {
                 inner: Some(Some(ButtonKind::Save)),
                 ..
             }) => {
-                state.set_operator(crate::state::OperatorData::save_all());
+                state.set_operator(crate::state::OperatorData::save_default());
                 state.set_show_buffer_unsaved(false);
                 state.set_show_quitable(true);
             }

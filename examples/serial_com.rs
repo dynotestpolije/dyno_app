@@ -1,8 +1,12 @@
-use dyno_core::tokio;
-use dynotest_app::{init_logger, service};
+use dyno_core::crossbeam_channel::unbounded;
+use dyno_core::{tokio, LoggerBuilder};
+use dynotest_app::{service, AsyncMsg};
 
 fn main() {
-    init_logger("");
+    LoggerBuilder::new()
+        .set_max_level(dyno_core::log::LevelFilter::Debug)
+        .build_console_logger()
+        .unwrap();
 
     let rt = tokio::runtime::Runtime::new().expect("Unable to create tokio's Runtime");
     // Enter the runtime so that `tokio::spawn` is available immediately.
@@ -25,7 +29,8 @@ fn main() {
             return;
         }
     };
-    let handle = match serial_service.start() {
+    let (tx, rx) = unbounded();
+    let handle = match serial_service.start(tx) {
         Ok(k) => k,
         Err(err) => {
             eprintln!("ERROR: Failed to start serial service - {err}");
@@ -36,12 +41,13 @@ fn main() {
     let mut data_received = 0usize;
     while !handle.is_finished() {
         std::thread::sleep(std::time::Duration::from_millis(100));
-        match serial_service.handle() {
-            Some(data) => {
+        match rx.try_recv() {
+            Ok(AsyncMsg::OnSerialData(serial_data)) => {
                 data_received += 1;
-                eprintln!("[{data_received}] - DATA: {data}")
+                eprintln!("[{data_received}] - DATA: {serial_data}")
             }
-            None => continue,
+            Ok(AsyncMsg::OnError(err)) => eprintln!("[{err}]"),
+            _ => (),
         }
     }
     eprintln!("Finish!");

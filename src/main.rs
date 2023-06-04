@@ -1,13 +1,10 @@
 // #![warn(clippy::all, rust_2018_idioms)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use dyno_core::{ignore_err, log, serde, tokio, Data, Numeric};
+use dyno_core::{ignore_err, log, serde, tokio};
 use dynotest_app::{
-    control::DynoControl,
-    init_logger, msg_dialog_err,
-    state::DynoState,
-    widgets::{gauges::Gauges, segment_display},
-    windows, PanelId, APP_KEY, PACKAGE_INFO, TOAST_MSG,
+    control::DynoControl, init_logger, msg_dialog_err, state::DynoState, windows, PanelId, APP_KEY,
+    PACKAGE_INFO, TOAST_MSG,
 };
 use eframe::egui::*;
 
@@ -47,7 +44,7 @@ impl Applications {
         ignore_err!(init_logger(log_dir));
         let opt = control.app_config.app_options.main_window_opt();
         let app_creator: eframe::AppCreator = Box::new(|cc| {
-            let slf = Box::new(
+            Box::new(
                 cc.storage
                     .and_then(|s| eframe::get_value::<Self>(s, APP_KEY))
                     .unwrap_or_else(|| Self {
@@ -55,8 +52,7 @@ impl Applications {
                         control,
                         ..Default::default()
                     }),
-            );
-            slf
+            )
         });
         if let Err(err) = eframe::run_native(PACKAGE_INFO.app_name, opt, app_creator) {
             dyno_core::log::error!("Failed to run app eframe in native - {err}");
@@ -72,96 +68,65 @@ impl Applications {
 }
 
 impl Applications {
-    fn main_panels_draw(&mut self, ctx: &Context, data: &Data) {
+    fn main_panels_draw(&mut self, ctx: &Context) {
         let width = ctx.available_rect().width();
+        let height = ctx.available_rect().height();
 
         TopBottomPanel::top(PanelId::Top).show(ctx, |ui| {
             menu::bar(ui, |uibar| {
-                widgets::global_dark_light_mode_switch(uibar);
+                use dynotest_app::assets::POLIJE_LOGO_PNG as IMG;
+                uibar.image(IMG.texture_id(uibar.ctx()), IMG.size_vec2());
+                uibar.heading("DynoTests Polije");
                 uibar.separator();
                 self.state.menubar(uibar);
                 uibar.with_layout(Layout::right_to_left(Align::Center), |rtl_ui| {
-                    if rtl_ui.button("Login").clicked() {
-                        log::info!("About submenu clicked");
-                        self.state.swap_show_auth_window();
+                    widgets::global_dark_light_mode_switch(rtl_ui);
+                    match self.control.api() {
+                        Some(api) if api.is_logined() => {
+                            if rtl_ui.button("Save to Server").clicked() {
+                                log::info!("Saving to server...");
+                                self.state.swap_show_save_server();
+                            }
+                            if rtl_ui.button("Logout").clicked() {
+                                log::info!("Logout button clicked");
+                                api.logout(self.control.tx().clone());
+                            }
+                        }
+                        _ => {
+                            if rtl_ui
+                                .button("Login")
+                                .on_hover_text(
+                                    "login first to access server, like saving data to server.",
+                                )
+                                .clicked()
+                            {
+                                log::info!("Login bottom clicked");
+                                self.state.swap_show_auth_window();
+                            }
+                        }
                     }
                 });
             })
         });
 
-        TopBottomPanel::bottom(PanelId::Bottom).show_animated(
-            ctx,
-            self.state.show_bottom_panel(),
-            |uibottom| uibottom.horizontal_centered(|vertui| self.control.bottom_status(vertui)),
-        );
-
-        let uigroup_column_left = |left_ui: &mut Ui| {
-            left_ui.columns(2, |uis| {
-                uis[0].add(Gauges::speed(data.speed).diameter(uis[0].available_width()));
-                uis[1].add(Gauges::rpm_engine(data.rpm_engine).diameter(uis[1].available_width()));
+        TopBottomPanel::bottom(PanelId::Bottom)
+            .max_height(height * 0.05)
+            .show_animated(ctx, self.state.show_bottom_panel(), |ui| {
+                self.control.bottom_status(ui)
             });
-            left_ui.separator();
-            left_ui.columns(3, |uis| {
-                uis[0].add(Gauges::horsepower(data.horsepower).diameter(uis[0].available_width()));
-                uis[1]
-                    .add(Gauges::rpm_roda(data.rpm_roda).diameter(uis[1].available_width() * 0.8));
-                uis[2].add(Gauges::torque(data.torque).diameter(uis[2].available_width()));
-            });
-        };
-        const MULTPL_WIDTH: f32 = 0.19;
-        const HEADING_SEGMENTS: [&str; 3] = ["ODO (km)", "Speed (km/h)", "Time (HH:MM:SS)"];
-        let uigroup_column_right = |right_ui: &mut Ui| {
-            right_ui.columns(3, |segments_ui| {
-                let value_segments = [
-                    format!("{:7.2}", data.odo.to_float()),
-                    format!("{:7.2}", data.speed.to_float()),
-                    self.control.start_time(data),
-                ];
-                let iter_segmented_ui = |(idx, segment_ui): (usize, &mut Ui)| {
-                    segment_ui.group(|uigroup_inner| {
-                        uigroup_inner.vertical_centered(|uivert_inner| {
-                            uivert_inner.strong(HEADING_SEGMENTS[idx]);
-                            let digit_height = uivert_inner.available_width() * MULTPL_WIDTH;
-                            uivert_inner.add({
-                                #[cfg(not(debug_assertions))]
-                                {
-                                    segment_display::SegmentedDisplay::dyno_seven_segment(
-                                        &value_segments[idx],
-                                    )
-                                    .digit_height(digit_height)
-                                }
-                                #[cfg(debug_assertions)]
-                                {
-                                    segment_display::SegmentedDisplay::dyno_seven_segment(
-                                        &value_segments[idx],
-                                    )
-                                    .style_preset(self.debug.get_preset())
-                                    .digit_height(digit_height)
-                                }
-                            });
-                        });
-                    });
-                };
-                segments_ui
-                    .iter_mut()
-                    .enumerate()
-                    .for_each(iter_segmented_ui);
-            });
-            right_ui.separator();
-            self.control.show_plot(right_ui);
-        };
 
         SidePanel::left(PanelId::Left)
-            .min_width(width * 0.3)
+            .min_width(width * 0.45)
             .max_width(width * 0.5)
-            .show_animated(ctx, self.state.show_left_panel(), uigroup_column_left);
-        CentralPanel::default().show(ctx, uigroup_column_right);
+            .show_animated(ctx, self.state.show_left_panel(), |ui| {
+                self.control.left_panel(ui)
+            });
+        CentralPanel::default().show(ctx, |ui| self.control.right_panel(ui));
     }
 }
 
 impl eframe::App for Applications {
     fn update(&mut self, ctx: &Context, frame: &mut eframe::Frame) {
-        let last_data = self.control.last_buffer();
         #[cfg(debug_assertions)]
         {
             self.debug.show_window(ctx, self.control.buffer_mut());
@@ -169,10 +134,14 @@ impl eframe::App for Applications {
         for window in &mut self.window_states {
             window.show_window(ctx, &mut self.control, &mut self.state)
         }
-        self.control.handle_states(ctx, frame, &mut self.state);
-
         crate::TOAST_MSG.lock().show(ctx);
-        self.main_panels_draw(ctx, &last_data);
+
+        self.control.handle_states(ctx);
+        self.main_panels_draw(ctx);
+
+        if self.state.quit() {
+            frame.close();
+        }
     }
 
     fn clear_color(&self, visuals: &Visuals) -> [f32; 4] {
@@ -180,7 +149,7 @@ impl eframe::App for Applications {
     }
 
     fn post_rendering(&mut self, _window_size_px: [u32; 2], _frame: &eframe::Frame) {
-        self.control.on_pos_render();
+        self.control.on_pos_render(&mut self.state);
     }
 
     fn on_close_event(&mut self) -> bool {

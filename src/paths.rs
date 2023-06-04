@@ -91,7 +91,7 @@ impl DynoPaths {
         match Self::try_get_dirs(name).map(|p| p.into()) {
             Some(s) => Ok(s),
             None => Err(DynoErr::input_output_error(
-                "cannot initialize DynoPaths, no valid home directory path could be retrieved from the operating system",
+                "Failed initialize Path, no valid home directory path could be retrieved from the operating system",
             )),
         }
     }
@@ -167,6 +167,15 @@ impl IndexMut<usize> for DynoPaths {
 }
 
 impl DynoPaths {
+    pub const PATHS_NAME: [&str; 6] = [
+        r#"PROJECT PATH"#,
+        r#"CACHE PATH"#,
+        r#"CONFIG PATH"#,
+        r#"DATA PATH"#,
+        r#"DATA LOCAL PATH"#,
+        r#"PREFERENCE PATH"#,
+    ];
+
     #[inline]
     pub fn get_config<D>(&self, filename: &'_ str) -> DynoResult<D>
     where
@@ -205,7 +214,7 @@ impl DynoPaths {
                 f = file.display()
             )));
         }
-        D::decompress_from_file(file).map_err(From::from)
+        D::decompress_from_path(file).map_err(From::from)
     }
 
     #[inline]
@@ -214,26 +223,46 @@ impl DynoPaths {
         S: CompresedSaver,
     {
         let file = self.get_data_dir_file(filename);
-        S::compress_to_file(&config, file).map_err(From::from)
+        S::compress_to_path(&config, file).map_err(From::from)
+    }
+
+    #[inline]
+    pub fn as_slice_mut(&mut self) -> [&'_ mut PathBuf; 6] {
+        [
+            &mut self.project_path,
+            &mut self.cache_dir,
+            &mut self.config_dir,
+            &mut self.data_dir,
+            &mut self.data_local_dir,
+            &mut self.preference_dir,
+        ]
     }
 
     pub fn draw(&mut self, ui: &mut eframe::egui::Ui, edit: &mut bool) {
-        use eframe::egui::{RichText, TextEdit};
+        use eframe::egui::{Grid, Link, TextEdit};
+        ui.add_space(50.0);
         ui.add(TextEdit::singleline(&mut self.name).hint_text("app dir name"));
-        ui.separator();
+        ui.add_space(20.0);
         ui.checkbox(edit, "Edit Paths Config");
-        let bg_color = ui.style().visuals.extreme_bg_color;
-        for i in 0..6 {
-            let path = self.index_mut(i);
-            ui.separator();
-            {
-                let text = RichText::new(format!("{}", path.display())).background_color(bg_color);
-                if ui.link(text).on_hover_text("Left Click to Edit").clicked() && *edit {
-                    if let Some(p) = DynoFileManager::pick_folder("Change Path", &path) {
-                        *path = p;
+        ui.add_space(20.0);
+        Grid::new("dyno_setting_paths")
+            .num_columns(2)
+            .striped(true)
+            .show(ui, |ui| {
+                for (i, paths) in self.as_slice_mut().into_iter().enumerate() {
+                    ui.label(Self::PATHS_NAME[i])
+                        .on_hover_text("Click on the path in the right to edit the paths");
+                    let links = ui
+                        .add_enabled(*edit, Link::new(paths.to_string_lossy()))
+                        .on_hover_text("Click to Edit");
+                    if links.clicked() {
+                        if let Some(p) = DynoFileManager::pick_folder("Change Path", &paths) {
+                            *paths = p;
+                        }
                     }
+                    ui.end_row();
                 }
-            }
-        }
+            });
+        ui.add_space(50.0);
     }
 }

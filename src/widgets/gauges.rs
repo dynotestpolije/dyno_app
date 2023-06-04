@@ -3,14 +3,14 @@ use eframe::egui::*;
 use eframe::emath::Rot2;
 
 #[derive(Debug, Clone)]
-pub struct Gauges {
+pub struct Gauge {
     value: f32,
     diameter: Option<f32>,
 
     types: GaugeTypes,
     animated: bool,
 }
-impl Gauges {
+impl Gauge {
     pub fn new(preset: GaugeTypes, value: f32) -> Self {
         Self {
             value,
@@ -29,7 +29,6 @@ impl Gauges {
         Self::new(GaugeTypes::RpmRodaGauge, value.to_f32() * 0.001).animated(true)
     }
     pub fn rpm_engine(value: impl Numeric) -> Self {
-        // map value from 1000 to 1 ( value *  1000 )
         Self::new(GaugeTypes::RpmEngineGauge, value.to_f32() * 0.001).animated(true)
     }
 
@@ -51,7 +50,7 @@ impl Gauges {
     }
 }
 
-impl Widget for Gauges {
+impl Widget for Gauge {
     fn ui(self, ui: &mut Ui) -> Response {
         let Self {
             value,

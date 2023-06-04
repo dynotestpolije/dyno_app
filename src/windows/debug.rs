@@ -82,7 +82,7 @@ impl DebugAction {
                 )
             });
 
-        if *start {
+        if *start && ((ctx_time as u64 * 1000) % 250) == 0 {
             let data = Data {
                 speed: KilometresPerHour::new(*speed),
                 rpm_roda: RotationPerMinute::new(*rpm),

@@ -8,36 +8,27 @@ pub struct PortInfo {
     pub port_name: String,
     pub vid: u16,
     pub pid: u16,
-    pub serial_number: Option<String>,
-    pub manufacturer: Option<String>,
-    pub product: Option<String>,
 }
 impl PortInfo {
-    #[inline(always)]
-    fn from_serialport(serialport_info: SerialPortInfo) -> Option<Self> {
-        let SerialPortInfo {
+    /// construct from [SerialPortInfo] into [Self]
+    #[inline]
+    fn from_serialport(
+        SerialPortInfo {
             port_name,
             port_type,
-        } = serialport_info;
+        }: SerialPortInfo,
+    ) -> Option<Self> {
         match port_type {
-            UsbPort(UsbPortInfo {
-                vid,
-                pid,
-                serial_number,
-                manufacturer,
-                product,
-            }) => Some(Self {
+            UsbPort(UsbPortInfo { vid, pid, .. }) => Some(Self {
                 port_name,
                 vid,
                 pid,
-                serial_number,
-                manufacturer,
-                product,
             }),
             _ => None,
         }
     }
 
+    /// check if [Self] is dynotests device port
     const fn is_dyno_port(&self) -> bool {
         matches!((self.vid, self.pid), (3220, 1406))
     }
@@ -50,5 +41,5 @@ pub fn get_dyno_port() -> DynoResult<Option<PortInfo>> {
                 .filter_map(PortInfo::from_serialport)
                 .find(PortInfo::is_dyno_port)
         })
-        .map_err(|err| DynoErr::input_output_error(format!("Listing Port Error: {err}")))
+        .map_err(|err| DynoErr::input_output_error(format!("Failed Getting Port: {err}")))
 }

@@ -12,6 +12,10 @@ pub use constant::*;
 use dyno_core::{lazy_static, log, DynoErr, DynoResult, FileAction, LoggerBuilder};
 
 pub const COLOR_BLUE_DYNO: eframe::epaint::Color32 = eframe::epaint::Color32::from_rgb(0, 204, 255);
+pub const COLOR_BLUE_DYNO_DARK: eframe::epaint::Color32 =
+    eframe::epaint::Color32::from_rgb(0, 61, 76);
+pub const COLOR_BLUE_DYNO_DARKER: eframe::epaint::Color32 =
+    eframe::epaint::Color32::from_rgb(0, 20, 25);
 
 lazy_static::lazy_static! {
     pub static ref TOAST_MSG: eframe::epaint::mutex::Mutex<widgets::toast::Toasts> = eframe::epaint::mutex::Mutex::new(widgets::toast::Toasts::new());
@@ -35,6 +39,38 @@ impl From<PanelId> for eframe::egui::Id {
             PanelId::Right => eframe::egui::Id::new("E3221406_dynotest_right_panel"),
             PanelId::Center => eframe::egui::Id::new("E3221406_central_panel"),
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum AsyncMsg {
+    OnSavedBuffer(()),
+    OnCheckHealthApi(dyno_core::reqwest::StatusCode),
+    OnSerialData(dyno_core::SerialData),
+    OnMessage(String),
+    OnError(DynoErr),
+    OnOpenBuffer(Box<dyno_core::BufferData>),
+}
+
+impl AsyncMsg {
+    pub const fn saved_buffer() -> Self {
+        Self::OnSavedBuffer(())
+    }
+    pub const fn serial_data(inner: dyno_core::SerialData) -> Self {
+        Self::OnSerialData(inner)
+    }
+    pub const fn check_health(inner: dyno_core::reqwest::StatusCode) -> Self {
+        Self::OnCheckHealthApi(inner)
+    }
+
+    pub fn error(inner: impl Into<DynoErr>) -> Self {
+        Self::OnError(inner.into())
+    }
+    pub fn open_buffer(inner: dyno_core::BufferData) -> Self {
+        Self::OnOpenBuffer(Box::new(inner))
+    }
+    pub fn message(inner: impl ToString) -> Self {
+        Self::OnMessage(inner.to_string())
     }
 }
 
