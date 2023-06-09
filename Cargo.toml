@@ -6,6 +6,7 @@ version = "0.0.1"
 authors = ["Rizal Achmad Pahlevi <echo 'cml6YWwuYWhtYWRwQGdtYWlsLmNvbQo=' | base64 -d>"]
 edition = "2021"
 readme = "README.md"
+license = "MIT"
 repository = "https://github.com/dynotestpolije/dyno_app"
 
 [features]
@@ -50,5 +51,19 @@ optional = true
 default-features = false
 features = ["ico", "jpeg", "png", "rgb"]
 
+[package.metadata.deb]
+maintainer = "Rizal Achmad Pahlevi <echo 'cml6YWwuYWhtYWRwQGdtYWlsLmNvbQo=' | base64 -d>"
+copyright = "2023, Rizal Achmad Pahlevi <echo 'cml6YWwuYWhtYWRwQGdtYWlsLmNvbQo=' | base64 -d>"
+license-file = ["LICENSE"]
+extended-description = """\
+dynotests application for dynotest in State of Polytechnic Jemeber\
+building Debian packages from Rust projects."""
+depends = "$auto"
+section = "utility"
+priority = "required"
+assets = [
+    ["target/release/dynotest_app", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/dynotest_app/README", "644"],
+]
 
 

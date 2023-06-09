@@ -49,26 +49,36 @@ pub enum AsyncMsg {
     OnSerialData(dyno_core::SerialData),
     OnMessage(String),
     OnError(DynoErr),
+    OnApiGetDyno(Vec<dyno_core::dynotests::DynoTest>),
     OnOpenBuffer(Box<dyno_core::BufferData>),
 }
 
 impl AsyncMsg {
+    #[inline]
     pub const fn saved_buffer() -> Self {
         Self::OnSavedBuffer(())
     }
+    #[inline]
     pub const fn serial_data(inner: dyno_core::SerialData) -> Self {
         Self::OnSerialData(inner)
     }
+    #[inline]
     pub const fn check_health(inner: dyno_core::reqwest::StatusCode) -> Self {
         Self::OnCheckHealthApi(inner)
     }
-
+    #[inline]
+    pub const fn on_get_dyno(data: Vec<dyno_core::dynotests::DynoTest>) -> Self {
+        Self::OnApiGetDyno(data)
+    }
+    #[inline]
     pub fn error(inner: impl Into<DynoErr>) -> Self {
         Self::OnError(inner.into())
     }
+    #[inline]
     pub fn open_buffer(inner: dyno_core::BufferData) -> Self {
         Self::OnOpenBuffer(Box::new(inner))
     }
+    #[inline]
     pub fn message(inner: impl ToString) -> Self {
         Self::OnMessage(inner.to_string())
     }
