@@ -203,6 +203,7 @@ impl DynoControl {
                     }
                 }
                 AsyncMsg::OnMessage(msg) => toast_info!("{msg}"),
+                AsyncMsg::OnApiGetDyno(data) => dyno_core::log::error!("Ignoring {data:?}"),
             }
         }
 

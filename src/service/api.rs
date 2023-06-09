@@ -1,23 +1,23 @@
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
 use dyno_core::{
     asyncify,
     chrono::NaiveDateTime,
     crossbeam_channel::Sender,
-    dynotests::DynoTestDataInfo,
+    crypto::{checksum_from_bytes, compare_checksums, TokenDetails},
+    dynotests::{DynoTest, DynoTestDataInfo},
     ignore_err,
-    reqwest::Client,
+    reqwest::{multipart, Client, Response},
+    tokio,
     users::{UserLogin, UserRegistration},
-    ApiResponse, BufferData, CompresedSaver as _, DynoConfig, DynoErr, DynoResult, UserSession,
+    ApiResponse, BufferData, CompresedSaver as _, DynoConfig, DynoErr, DynoResult,
 };
 use eframe::epaint::mutex::Mutex;
 
 use crate::AsyncMsg;
-
-#[allow(unused)]
-pub static SERVER_URL: &str = env!("API_SERVER_URL");
-#[allow(unused)]
-pub static SERVER_URL_API_ENDPOINT: &str = concat!(env!("API_SERVER_URL"), "/api");
 
 static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
@@ -27,11 +27,19 @@ macro_rules! api_url {
     };
 }
 
+macro_rules! data_url {
+    ($paths:literal) => {
+        concat!(env!("API_SERVER_URL"), "/data", $paths)
+    };
+    ($paths:expr) => {
+        format!("{}/{}", env!("API_SERVER_URL"), $paths)
+    };
+}
 #[derive(Clone)]
 pub struct ApiService {
     client: Client,
-    token: Arc<Mutex<Option<String>>>,
-    session: Arc<Mutex<Option<UserSession>>>,
+    logined: Arc<AtomicBool>,
+    token_session: Arc<Mutex<Option<TokenDetails>>>,
 }
 
 impl ApiService {
@@ -42,78 +50,89 @@ impl ApiService {
             .map_err(DynoErr::service_error)?;
         Ok(Self {
             client,
-            token: Default::default(),
-            session: Default::default(),
+            logined: Arc::new(AtomicBool::new(false)),
+            token_session: Default::default(),
         })
     }
+
+    #[inline]
     pub fn is_logined(&self) -> bool {
-        self.token.lock().is_some()
+        self.logined.load(Ordering::Relaxed)
+    }
+
+    #[inline]
+    fn get_token(&self) -> Option<String> {
+        let lock = self.token_session.lock();
+        lock.as_ref().and_then(|tok| tok.token.clone())
     }
 }
 
 impl ApiService {
     pub fn check_health(&self, tx: Sender<AsyncMsg>) {
         let client = self.client.clone();
-        dyno_core::tokio::spawn(async move {
+        let async_spawn = async move {
             match client
                 .get(api_url!("/health"))
                 .send()
                 .await
+                .and_then(Response::error_for_status)
                 .map_err(DynoErr::service_error)
             {
                 Ok(resp) => tx.send(AsyncMsg::check_health(resp.status())),
                 Err(err) => tx.send(AsyncMsg::error(err)),
             }
-        });
+        };
+        tokio::spawn(async_spawn);
     }
 
     pub fn login(&self, login: UserLogin, tx: Sender<AsyncMsg>) {
         let client = self.client.clone();
-        let token = self.token.clone();
-        let user_session = self.session.clone();
+        let logined = self.logined.clone();
+        let token_session = self.token_session.clone();
 
-        dyno_core::tokio::spawn(async move {
+        let async_spawn = async move {
             match client
                 .post(api_url!("/auth/login"))
                 .json(&login)
                 .send()
                 .await
-                .map_err(DynoErr::service_error)
+                .and_then(Response::error_for_status)
+                .map_err(AsyncMsg::error)
             {
                 Ok(resp) => {
                     match resp
-                        .json::<ApiResponse<(UserSession, String)>>()
+                        .json::<ApiResponse<TokenDetails>>()
                         .await
                         .map_err(DynoErr::service_error)
                     {
                         Ok(user_session_resp) => {
-                            if user_session_resp.status_ok() {
-                                user_session.lock().replace(user_session_resp.payload.0);
-                                token.lock().replace(user_session_resp.payload.1);
-                                ignore_err!(tx.send(AsyncMsg::message("Login Success!")))
-                            } else {
-                                ignore_err!(tx.send(AsyncMsg::error(DynoErr::service_error(
-                                    "Something wrong on user_session payload response"
-                                ))))
+                            {
+                                logined.store(true, Ordering::Relaxed);
+                                let mut token_lock = token_session.lock();
+                                *token_lock = Some(user_session_resp.payload);
                             }
+                            ignore_err!(tx.send(AsyncMsg::message("Login Success!")))
                         }
                         Err(err) => ignore_err!(tx.send(AsyncMsg::error(err))),
                     }
                 }
-                Err(err) => ignore_err!(tx.send(AsyncMsg::error(err))),
+                Err(err) => ignore_err!(tx.send(err)),
             }
-        });
+        };
+
+        tokio::spawn(async_spawn);
     }
 
     pub fn register(&self, register: UserRegistration, tx: Sender<AsyncMsg>) {
         let client = self.client.clone();
-
-        dyno_core::tokio::spawn(async move {
+        let async_spawn = async move {
             match client
                 .post(api_url!("/auth/register"))
                 .json(&register)
                 .send()
                 .await
+                .and_then(Response::error_for_status)
+                .map_err(AsyncMsg::error)
             {
                 Ok(resp) => match resp.json::<ApiResponse<i32>>().await {
                     Ok(_resp) => {
@@ -121,27 +140,73 @@ impl ApiService {
                     }
                     Err(err) => ignore_err!(tx.send(AsyncMsg::error(err))),
                 },
-                Err(err) => ignore_err!(tx.send(AsyncMsg::error(err))),
+                Err(err) => ignore_err!(tx.send(err)),
             }
-        });
+        };
+
+        tokio::spawn(async_spawn);
     }
 
     pub fn logout(&self, tx: Sender<AsyncMsg>) {
         if !self.is_logined() {
             return;
         }
-
+        let token_session = self.token_session.clone();
         let client = self.client.clone();
-        dyno_core::tokio::spawn(async move {
-            match client.get(api_url!("/auth/logout")).send().await {
-                Ok(_resp) => ignore_err!(tx.send(AsyncMsg::message("Logout is Success!"))),
-                Err(err) => ignore_err!(tx.send(AsyncMsg::error(err))),
+        let async_spawn = async move {
+            match client
+                .get(api_url!("/auth/logout"))
+                .send()
+                .await
+                .and_then(Response::error_for_status)
+                .map_err(AsyncMsg::error)
+            {
+                Ok(resp) => {
+                    let status = resp.status();
+                    if status.is_success() {
+                        {
+                            // reset the token and session
+                            let mut token_lock = token_session.lock();
+                            *token_lock = None;
+                        }
+                        ignore_err!(tx.send(AsyncMsg::message("Logout is Success!")))
+                    } else {
+                        ignore_err!(tx.send(AsyncMsg::error(format!(
+                            "Logout is Error with status: {status}"
+                        ))))
+                    }
+                }
+                Err(err) => ignore_err!(tx.send(err)),
             }
-        });
+        };
+        tokio::spawn(async_spawn);
     }
 }
 
 impl ApiService {
+    #[inline]
+    pub async fn get_info_part(config: DynoTestDataInfo) -> DynoResult<multipart::Part> {
+        asyncify!(move || config.compress().and_then(|info| {
+            let len = info.len() as _;
+            multipart::Part::stream_with_length(info, len)
+                .mime_str("application/json")
+                .map_err(DynoErr::service_error)
+        }))
+    }
+
+    #[inline]
+    pub async fn get_data_part(data: BufferData) -> DynoResult<(multipart::Part, String)> {
+        asyncify!(move || data.compress().and_then(|compressed| {
+            let checksum = dyno_core::crypto::checksum_from_bytes(&compressed);
+            let compressed_len = compressed.len() as _;
+            multipart::Part::stream_with_length(compressed, compressed_len)
+                .file_name(dyno_core::uuid::Uuid::new_v4().simple().to_string())
+                .mime_str("application/octet-stream")
+                .map_err(DynoErr::service_error)
+                .map(|part| (part, checksum))
+        }))
+    }
+
     pub fn save_dyno(
         &self,
         data: BufferData,
@@ -150,86 +215,144 @@ impl ApiService {
         stop: NaiveDateTime,
         tx: Sender<AsyncMsg>,
     ) {
-        use dyno_core::{reqwest::multipart, serde_json, tokio};
-        let uuid = match self.session.lock().as_ref().map(|x| x.uuid) {
-            Some(uuid) => uuid,
-            None => return,
+        let token = match self.get_token() {
+            Some(tok) => tok,
+            None => {
+                ignore_err!(tx.send(AsyncMsg::error("You are not Login, please Login first.")));
+                return;
+            }
         };
 
         let client = self.client.clone();
-        tokio::spawn(async move {
-            let (file_part, checksum_hex) =
-                match asyncify!(move || data.compress().map(|compressed| {
-                    let now = dyno_core::chrono::Utc::now().naive_utc();
-                    let checksum = dyno_core::crypto::checksum_from_bytes(&compressed);
-                    let compressed_len = compressed.len() as _;
-                    (
-                        multipart::Part::stream_with_length(compressed, compressed_len)
-                            .file_name(format!("{uuid}-{}", now.format("%s")))
-                            .mime_str("application/octet-stream"),
-                        checksum,
-                    )
-                })) {
-                    Ok(ok) => match ok.0 {
-                        Ok(part) => (part, ok.1),
-                        Err(err) => {
-                            ignore_err!(tx.send(AsyncMsg::error(err)));
-                            return;
-                        }
-                    },
-                    Err(err) => {
-                        ignore_err!(tx.send(AsyncMsg::error(err)));
-                        return;
-                    }
-                };
 
-            let info_part = match serde_json::to_vec(&DynoTestDataInfo {
-                checksum_hex,
-                config,
-                start,
-                stop,
-            }) {
-                Ok(info) => match multipart::Part::bytes(info).mime_str("application/json") {
-                    Ok(part) => part,
-                    Err(err) => {
-                        ignore_err!(tx.send(AsyncMsg::error(err)));
-                        return;
-                    }
-                },
+        let async_spawn = async move {
+            let (file_part, checksum_hex) = match Self::get_data_part(data).await {
+                Ok(ok) => ok,
                 Err(err) => {
                     ignore_err!(tx.send(AsyncMsg::error(err)));
                     return;
                 }
             };
+            let config_data = DynoTestDataInfo {
+                checksum_hex,
+                config,
+                start,
+                stop,
+            };
+            let info_part = match Self::get_info_part(config_data).await {
+                Ok(ok) => ok,
+                Err(err) => {
+                    ignore_err!(tx.send(AsyncMsg::error(err)));
+                    return;
+                }
+            };
+            let multiparts = multipart::Form::new()
+                .part("data", file_part)
+                .part("info", info_part);
 
             match client
                 .post(api_url!("/dyno"))
-                .multipart(
-                    multipart::Form::new()
-                        .part("data", file_part)
-                        .part("info", info_part),
-                )
+                .multipart(multiparts)
+                .bearer_auth(token)
                 .send()
                 .await
+                .and_then(Response::error_for_status)
+                .map_err(AsyncMsg::error)
             {
-                Ok(resp) => {
-                    let status = resp.status();
-                    if status.is_success() {
-                        match resp.json::<ApiResponse<i32>>().await {
-                            Ok(id) => ignore_err!(tx.send(AsyncMsg::message(format!(
-                                "Save data is Success with id - {}",
-                                id.payload
-                            )))),
-                            Err(err) => ignore_err!(tx.send(AsyncMsg::error(err))),
-                        }
+                Ok(resp) => match resp.json::<ApiResponse<i32>>().await {
+                    Ok(id) => ignore_err!(tx.send(AsyncMsg::message(format!(
+                        "Save data is Success with id - {}",
+                        id.payload
+                    )))),
+                    Err(err) => ignore_err!(tx.send(AsyncMsg::error(err))),
+                },
+                Err(err) => ignore_err!(tx.send(err)),
+            }
+        };
+
+        tokio::spawn(async_spawn);
+    }
+
+    pub fn get_dyno(&self, tx: Sender<AsyncMsg>) {
+        let token = match self.get_token() {
+            Some(tok) => tok,
+            None => {
+                ignore_err!(tx.send(AsyncMsg::error("You are not Login, please Login first.")));
+                return;
+            }
+        };
+        let client = self.client.clone();
+
+        let async_spawn = async move {
+            match client
+                .get(api_url!("dyno"))
+                .bearer_auth(token)
+                .send()
+                .await
+                .and_then(Response::error_for_status)
+                .map_err(AsyncMsg::error)
+            {
+                Ok(resp) => match resp
+                    .json::<Vec<DynoTest>>()
+                    .await
+                    .map(AsyncMsg::on_get_dyno)
+                    .map_err(AsyncMsg::error)
+                {
+                    Ok(ok) => ignore_err!(tx.send(ok)),
+                    Err(err) => ignore_err!(tx.send(err)),
+                },
+                Err(err) => ignore_err!(tx.send(err)),
+            }
+        };
+
+        tokio::spawn(async_spawn);
+    }
+
+    pub fn get_dyno_file(&self, dyno_url: String, checksum: String, tx: Sender<AsyncMsg>) {
+        let token = match self.get_token() {
+            Some(tok) => tok,
+            None => {
+                ignore_err!(tx.send(AsyncMsg::error("You are not Login, please Login first.")));
+                return;
+            }
+        };
+        let client = self.client.clone();
+
+        let async_spawn = async move {
+            match client
+                .get(data_url!(dyno_url))
+                .bearer_auth(token)
+                .send()
+                .await
+                .and_then(Response::error_for_status)
+                .map_err(AsyncMsg::error)
+            {
+                Ok(mut resp) => {
+                    let mut data = if let Some(lenght) = resp.content_length() {
+                        Vec::with_capacity(lenght as _)
                     } else {
-                        ignore_err!(tx.send(AsyncMsg::error(format!(
-                            "Response Error with status: {status}"
-                        ))))
+                        vec![]
+                    };
+                    while let Ok(Some(chunk)) = resp.chunk().await {
+                        data.extend(chunk);
+                    }
+                    let data_checksum = checksum_from_bytes(&data);
+                    if !compare_checksums(data_checksum.as_bytes(), checksum.as_bytes()) {
+                        ignore_err!(tx.send(AsyncMsg::error("Data Checksum is not matching.")));
+                        return;
+                    }
+                    match BufferData::decompress(data)
+                        .map_err(AsyncMsg::error)
+                        .map(AsyncMsg::open_buffer)
+                    {
+                        Ok(ok) => ignore_err!(tx.send(ok)),
+                        Err(err) => ignore_err!(tx.send(err)),
                     }
                 }
-                Err(err) => ignore_err!(tx.send(AsyncMsg::error(err))),
+                Err(err) => ignore_err!(tx.send(err)),
             }
-        });
+        };
+
+        tokio::spawn(async_spawn);
     }
 }
