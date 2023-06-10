@@ -23,7 +23,9 @@
     - libxkbcommon
     - libssl
     ```bash
-    sudo apt-get install libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev
+    sudo apt-get install libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+        libxkbcommon-dev libssl-dev pkg-config libudev-dev libgtk-3-dev \
+        ninja-build meson nasm clang llvm
     ```
 
 ## INSTALATIONS
