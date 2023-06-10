@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=DynotestApp
+GenericName=Dynotests App for Dynotest Polije
+Comment=graphical software Dynotests for Dynotest Polije
+Path=/opt/dynotest_app
+Exec=dynotest_app
+Icon=dynotest_app
+Terminal=false
+Categories=Education;
+StartupNotify=false
