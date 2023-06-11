@@ -16,6 +16,7 @@ enum PanelSetting {
 
 #[derive(Clone, Default)]
 pub struct SettingWindow {
+    open: bool,
     panel: PanelSetting,
     edit_path: bool,
 }
@@ -24,7 +25,7 @@ impl SettingWindow {
     pub fn new() -> Self {
         Self {
             panel: PanelSetting::default(),
-            edit_path: false,
+            ..Default::default()
         }
     }
 
@@ -173,11 +174,12 @@ impl super::WindowState for SettingWindow {
         &mut self,
         ctx: &eframe::egui::Context,
         control: &mut crate::control::DynoControl,
-        state: &mut crate::state::DynoState,
+        _state: &mut crate::state::DynoState,
     ) {
+        let mut open = self.open;
         Window::new("Dyno Control Settings")
             .id(Id::new("id_control_setting"))
-            .open(state.show_config_mut())
+            .open(&mut open)
             .collapsible(false)
             .resizable(true)
             .show(ctx, |ui| {
@@ -217,5 +219,16 @@ impl super::WindowState for SettingWindow {
                         };
                     });
             });
+        self.open = open;
+    }
+
+    #[inline]
+    fn set_open(&mut self, open: bool) {
+        self.open = open;
+    }
+
+    #[inline]
+    fn is_open(&self) -> bool {
+        self.open
     }
 }

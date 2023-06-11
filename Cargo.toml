@@ -37,6 +37,10 @@ path = "egui/crates/eframe"
 default-features = true
 features = ["persistence"]
 
+[dependencies.egui_extras]
+path = "egui/crates/egui_extras"
+
+
 [dependencies.dyno_core]
 # if in release change to git url main branch
 # git = "https://github.com/dynotestpolije/dyno_types.git"
@@ -57,14 +61,14 @@ license-file = ["LICENSE"]
 extended-description = """\
 dynotests application for dynotest in State of Polytechnic Jemeber\
 building Debian packages from Rust projects."""
-depends = "$auto"
+depends = "libgtk-3-0 (>= 3.19.12), libssl1.1 (>= 1.1.0), libglib2.0-0 (>= 2.12.0), libxcb-render0-dev, libudev1 (>= 183), libc6 (>= 2.29), libxcb-shape0-dev, libxcb-xfixes0-dev, libxkbcommon-dev"
 section = "utility"
 priority = "required"
 assets = [
     ["target/release/dynotest_app", "usr/bin/", "755"],
     ["README.md", "usr/share/doc/dynotest_app/README", "644"],
-    ["assets", "usr/share/dynotest_app/", "644"],
-    ["utils/DynotestApp.desktop", "usr/share/application/dynotest_app/README", "644"],
+    ["assets/*", "usr/share/dynotest_app/assets/", "644"],
+    ["utils/DynotestApp.desktop", "usr/share/applications/", "644"],
     ["utils/dynotest_app.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
 ]
 

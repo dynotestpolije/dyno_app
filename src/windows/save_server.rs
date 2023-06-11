@@ -7,10 +7,12 @@ use crate::toast_warn;
 use crate::widgets::DynoWidgets;
 
 #[derive(Debug, Clone, Default)]
-pub struct SaveServerWindow;
+pub struct SaveServerWindow {
+    open: bool,
+}
 impl SaveServerWindow {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 }
 
@@ -19,19 +21,18 @@ impl super::WindowState for SaveServerWindow {
         &mut self,
         ctx: &eframe::egui::Context,
         control: &mut crate::control::DynoControl,
-        state: &mut crate::state::DynoState,
+        _state: &mut crate::state::DynoState,
     ) {
-        if state.show_save_server() {
-            ctx.layer_painter(LayerId::new(
-                eframe::egui::Order::Background,
-                Id::new("confirmation_popup_unsaved"),
-            ))
-            .rect_filled(
-                ctx.input(|inp| inp.screen_rect()),
-                0.0,
-                Color32::from_black_alpha(192),
-            );
-        }
+        ctx.layer_painter(LayerId::new(
+            eframe::egui::Order::Background,
+            Id::new("confirmation_popup_unsaved"),
+        ))
+        .rect_filled(
+            ctx.input(|inp| inp.screen_rect()),
+            0.0,
+            Color32::from_black_alpha(192),
+        );
+
         let ui_window = |ui: &mut Ui| {
             ui.heading("The Info Dynotests: ");
             ui.add_space(10.);
@@ -96,10 +97,20 @@ impl super::WindowState for SaveServerWindow {
         Window::new("Save DynoTests to Server")
             .id("dyno_save_server".into())
             .anchor(Align2::CENTER_CENTER, Vec2::new(0.0, 0.0))
-            .open(state.show_save_server_mut())
+            .open(&mut self.open)
             .movable(false)
             .collapsible(false)
             .resizable(false)
             .show(ctx, |ui| ui.vertical_centered_justified(ui_window));
+    }
+
+    #[inline]
+    fn set_open(&mut self, open: bool) {
+        self.open = open;
+    }
+
+    #[inline]
+    fn is_open(&self) -> bool {
+        self.open
     }
 }

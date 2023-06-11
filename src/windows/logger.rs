@@ -7,7 +7,7 @@ use eframe::{
 use itertools::Itertools;
 
 use crate::widgets::{button::ButtonExt, DynoFileManager, DynoWidgets};
-use dyno_core::{log::Level, serde, RECORDS_LOGGER};
+use dyno_core::{log::Level, RECORDS_LOGGER};
 
 const SIZE_LEVEL: usize = Level::Trace as usize;
 const LEVELS: [Level; SIZE_LEVEL] = [
@@ -29,9 +29,9 @@ pub const fn level_color(lvl: Level) -> Color32 {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(crate = "serde")]
+#[derive(Debug, Clone)]
 pub struct LoggerWindow {
+    open: bool,
     loglevels: [bool; SIZE_LEVEL],
     term: String,
     case_sensitive: bool,
@@ -41,6 +41,7 @@ pub struct LoggerWindow {
 impl Default for LoggerWindow {
     fn default() -> Self {
         Self {
+            open: false,
             loglevels: [true, true, true, false, false],
             term: String::with_capacity(128),
             case_sensitive: false,
@@ -160,12 +161,24 @@ impl super::WindowState for LoggerWindow {
         &mut self,
         ctx: &Context,
         _control: &mut crate::control::DynoControl,
-        state: &mut crate::state::DynoState,
+        _state: &mut crate::state::DynoState,
     ) {
+        let mut open = self.open;
         Window::new("Dyno Log Window")
-            .open(state.show_logger_window_mut())
+            .open(&mut open)
             .resizable(true)
             .id("dyno_log_window".into())
             .show(ctx, |ui| self.ui(ui));
+        self.open = open;
+    }
+
+    #[inline]
+    fn set_open(&mut self, open: bool) {
+        self.open = open;
+    }
+
+    #[inline]
+    fn is_open(&self) -> bool {
+        self.open
     }
 }

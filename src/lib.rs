@@ -42,6 +42,23 @@ impl From<PanelId> for eframe::egui::Id {
     }
 }
 
+pub fn init_logger(file: impl AsRef<std::path::Path>) -> DynoResult<()> {
+    let builder = LoggerBuilder::new()
+        .set_file(file.as_ref().to_path_buf())
+        .set_max_size(10);
+
+    if cfg!(debug_assertions) {
+        builder
+            .set_max_level(log::LevelFilter::Debug)
+            .build_console_logger()
+    } else {
+        builder
+            .set_max_level(log::LevelFilter::Warn)
+            .set_roll_action(FileAction::Roll)
+            .build_file_logger()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum AsyncMsg {
     OnSavedBuffer(()),
@@ -49,7 +66,7 @@ pub enum AsyncMsg {
     OnSerialData(dyno_core::SerialData),
     OnMessage(String),
     OnError(DynoErr),
-    OnApiGetDyno(Vec<dyno_core::dynotests::DynoTest>),
+    OnApiLoadDyno(Vec<dyno_core::dynotests::DynoTest>),
     OnOpenBuffer(Box<dyno_core::BufferData>),
 }
 
@@ -67,8 +84,8 @@ impl AsyncMsg {
         Self::OnCheckHealthApi(inner)
     }
     #[inline]
-    pub const fn on_get_dyno(data: Vec<dyno_core::dynotests::DynoTest>) -> Self {
-        Self::OnApiGetDyno(data)
+    pub const fn on_load_dyno(data: Vec<dyno_core::dynotests::DynoTest>) -> Self {
+        Self::OnApiLoadDyno(data)
     }
     #[inline]
     pub fn error(inner: impl Into<DynoErr>) -> Self {
@@ -81,23 +98,6 @@ impl AsyncMsg {
     #[inline]
     pub fn message(inner: impl ToString) -> Self {
         Self::OnMessage(inner.to_string())
-    }
-}
-
-pub fn init_logger(file: impl AsRef<std::path::Path>) -> DynoResult<()> {
-    let builder = LoggerBuilder::new()
-        .set_file(file.as_ref().to_path_buf())
-        .set_max_size(10);
-
-    if cfg!(debug_assertions) {
-        builder
-            .set_max_level(log::LevelFilter::Debug)
-            .build_console_logger()
-    } else {
-        builder
-            .set_max_level(log::LevelFilter::Warn)
-            .set_roll_action(FileAction::Roll)
-            .build_file_logger()
     }
 }
 

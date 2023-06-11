@@ -8,13 +8,14 @@ use crate::{
     widgets::{
         button::ButtonExt, segment_display::SegmentedDisplay, DynoFileManager, Gauge, RealtimePlot,
     },
+    windows::{WSIdx, WindowStack},
     AsyncMsg,
 };
 use dyno_core::{
     asyncify,
     chrono::{NaiveDateTime, Utc},
     crossbeam_channel::{unbounded, Receiver, Sender},
-    ignore_err, serde, BufferData, CompresedSaver, CsvSaver, Data, DynoConfig, DynoResult,
+    ignore_err, log, serde, BufferData, CompresedSaver, CsvSaver, Data, DynoConfig, DynoResult,
     ExcelSaver,
 };
 use eframe::egui::*;
@@ -78,7 +79,21 @@ pub struct DynoControl {
 
 impl Default for DynoControl {
     fn default() -> Self {
-        Self::new()
+        Self {
+            paths: Default::default(),
+            app_config: Default::default(),
+            config: Default::default(),
+            buffer: Default::default(),
+            serial_service: Default::default(),
+            api_service: Default::default(),
+            plots: Default::default(),
+            async_channels: unbounded(),
+            start_time: Default::default(),
+            start: Default::default(),
+            stop: Default::default(),
+            loadings: Default::default(),
+            buffer_saved: Default::default(),
+        }
     }
 }
 
@@ -118,11 +133,7 @@ impl DynoControl {
                 },
                 Some,
             ),
-            serial_service: Default::default(),
-            start_time: Default::default(),
-            start: Default::default(),
-            stop: Default::default(),
-            loadings: Default::default(),
+            ..Default::default()
         }
     }
 
@@ -172,11 +183,15 @@ impl DynoControl {
         self.api_service = Some(ApiService::new()?);
         Ok(())
     }
+    #[inline]
+    pub fn set_loading(&self) {
+        self.loadings.store(true, Ordering::Relaxed);
+    }
 }
 
 impl DynoControl {
     #[inline]
-    pub fn on_pos_render(&mut self, state: &mut DynoState) {
+    pub fn on_pos_render(&mut self, window_stack: &mut WindowStack, state: &mut DynoState) {
         if let Ok(msg) = self.async_channels.1.try_recv() {
             match msg {
                 AsyncMsg::OnSerialData(serial_data) => {
@@ -193,9 +208,8 @@ impl DynoControl {
                 }
                 AsyncMsg::OnSavedBuffer(()) => {
                     self.buffer_saved = true;
-                    if state.quitable() {
-                        state.set_quit(true);
-                    }
+                    window_stack.set_open(WSIdx::ConfirmQuit, state.quitable());
+                    state.set_quitable(false);
                 }
                 AsyncMsg::OnCheckHealthApi(s) => {
                     if s.is_success() {
@@ -203,7 +217,7 @@ impl DynoControl {
                     }
                 }
                 AsyncMsg::OnMessage(msg) => toast_info!("{msg}"),
-                AsyncMsg::OnApiGetDyno(data) => dyno_core::log::error!("Ignoring {data:?}"),
+                AsyncMsg::OnApiLoadDyno(data) => dyno_core::log::error!("Ignoring {data:?}"),
             }
         }
 
@@ -214,7 +228,9 @@ impl DynoControl {
             // if buffer is saved and operator want to open file, do open the file to buffer,
             // or is buffer unsaved but operator want ot open file, show popup to save buffer first
             (OperatorData::OpenFile(tp), true) => self.on_open(tp),
-            (OperatorData::OpenFile(_), false) => state.set_show_buffer_unsaved(true),
+            (OperatorData::OpenFile(_), false) => {
+                window_stack.set_open(WSIdx::ConfirmUnsaved, true)
+            }
             _ => {}
         }
     }
@@ -300,6 +316,104 @@ impl DynoControl {
 }
 
 impl DynoControl {
+    #[inline(always)]
+    pub fn top_panel(
+        &mut self,
+        ui: &mut Ui,
+        window_stack: &mut WindowStack,
+        state: &mut DynoState,
+    ) {
+        ui.menu_button("File", |menu_ui| {
+            if menu_ui.open_button().clicked() {
+                log::debug!("Open Button menu clicked");
+                state.set_operator(OperatorData::OpenFile(DynoFileType::Dyno));
+            }
+            menu_ui.menu_button("Open As..", |submenu_ui| {
+                if submenu_ui.button("Csv File").clicked() {
+                    state.set_operator(OperatorData::OpenFile(DynoFileType::Csv));
+                    log::debug!("Open as Csv file submenu clicked");
+                }
+                if submenu_ui.button("Excel File").clicked() {
+                    state.set_operator(OperatorData::OpenFile(DynoFileType::Excel));
+                    log::debug!("Open as Excel file submenu clicked");
+                }
+                if submenu_ui.button("Binaries File").clicked() {
+                    state.set_operator(OperatorData::OpenFile(DynoFileType::Dyno));
+                    log::debug!("Open as Binaries file submenu clicked");
+                }
+            });
+            if menu_ui.save_button().clicked() {
+                log::debug!("Save file menu clicked");
+                state.set_operator(OperatorData::SaveFile(DynoFileType::Dyno));
+            }
+            menu_ui.menu_button("Save As..", |submenu_ui| {
+                if submenu_ui.button("Csv File").clicked() {
+                    log::debug!("Save as Csv file submenu clicked");
+                    state.set_operator(OperatorData::SaveFile(DynoFileType::Csv));
+                }
+                if submenu_ui.button("Excel File").clicked() {
+                    log::debug!("Save as Excel file submenu clicked");
+                    state.set_operator(OperatorData::SaveFile(DynoFileType::Excel));
+                }
+                if submenu_ui.button("Binaries File").clicked() {
+                    log::debug!("Save as Binaries file submenu clicked");
+                    state.set_operator(OperatorData::SaveFile(DynoFileType::Dyno));
+                }
+            });
+            if menu_ui.button("Quit").clicked() {
+                log::debug!("Exit submenu clicked");
+                window_stack.set_open(WSIdx::ConfirmQuit, true);
+            }
+        });
+        ui.menu_button("View", |submenu_ui| {
+            submenu_ui.checkbox(state.show_bottom_panel_mut(), "Bottom Panel");
+            submenu_ui.checkbox(state.show_left_panel_mut(), "Left Panel");
+            submenu_ui.checkbox(state.show_logger_window_mut(), "Logger Window");
+        });
+        if ui.button("Config").clicked() {
+            log::debug!("Config submenu clicked");
+            window_stack.set_swap_open(WSIdx::Setting);
+        }
+        if ui.button("Help").clicked() {
+            log::debug!("Help submenu clicked");
+            window_stack.set_swap_open(WSIdx::Help);
+        }
+        if ui.button("About").clicked() {
+            log::debug!("About submenu clicked");
+            window_stack.set_swap_open(WSIdx::About);
+        }
+
+        ui.with_layout(Layout::right_to_left(Align::Center), |rtl_ui| {
+            eframe::egui::widgets::global_dark_light_mode_switch(rtl_ui);
+            match &self.api_service {
+                Some(api) if api.is_logined() => {
+                    if rtl_ui.button("Logout").clicked() {
+                        log::info!("Logout button clicked");
+                        api.logout(self.tx().clone());
+                    }
+                    if rtl_ui.button("Open from Server").clicked() {
+                        log::info!("Opening Window Open Project from server...");
+                        window_stack.set_swap_open(WSIdx::OpenServer);
+                    }
+                    if rtl_ui.button("Save to Server").clicked() {
+                        log::info!("Opening Window Save Project to to server...");
+                        window_stack.set_swap_open(WSIdx::SaveServer);
+                    }
+                }
+                _ => {
+                    if rtl_ui
+                        .button("Login")
+                        .on_hover_text("login first to access server, like saving data to server.")
+                        .clicked()
+                    {
+                        log::info!("Login bottom clicked");
+                        window_stack.set_swap_open(WSIdx::Auth);
+                    }
+                }
+            }
+        });
+    }
+
     #[inline(always)]
     pub fn bottom_status(&mut self, ui: &mut Ui) {
         let layout_ui_status = |ltr_ui: &mut Ui| match &mut self.serial_service {

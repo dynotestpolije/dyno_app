@@ -1,5 +1,5 @@
 use crate::widgets::{button::ButtonExt, DynoWidgets};
-use dyno_core::{chrono::NaiveDateTime, convertions, BufferData, Data};
+use dyno_core::{chrono::NaiveDateTime, convertions, Data};
 
 #[derive(Debug, Default)]
 pub struct DebugAction {
@@ -12,13 +12,19 @@ pub struct DebugAction {
     display_style: crate::widgets::DisplayStylePreset,
     start: bool,
 }
+impl super::WindowState for DebugAction {
+    fn set_open(&mut self, _open: bool) {}
 
-impl DebugAction {
-    pub fn get_preset(&self) -> crate::widgets::DisplayStylePreset {
-        self.display_style
+    fn is_open(&self) -> bool {
+        true
     }
 
-    pub fn show_window(&mut self, ctx: &eframe::egui::Context, buffer: &mut BufferData) {
+    fn show_window(
+        &mut self,
+        ctx: &eframe::egui::Context,
+        control: &mut crate::control::DynoControl,
+        _state: &mut crate::state::DynoState,
+    ) {
         use convertions::prelude::*;
         let ctx_time = ctx.input(|i| i.time);
         let Self {
@@ -53,7 +59,7 @@ impl DebugAction {
 
                         if ui.reset_button().clicked() {
                             crate::log::debug!("Resetting Buffer in debug emulation");
-                            buffer.clean();
+                            control.buffer_mut().clean();
                         }
 
                         ui.end_row();
@@ -94,7 +100,7 @@ impl DebugAction {
                 time_stamp: NaiveDateTime::MIN,
                 ..Default::default()
             };
-            buffer.push_data(data);
+            control.buffer_mut().push_data(data);
         }
     }
 }
