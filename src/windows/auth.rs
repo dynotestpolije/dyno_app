@@ -1,4 +1,4 @@
-use crate::{toast_error, toast_warn, widgets::DynoWidgets};
+use crate::{toast_warn, widgets::DynoWidgets};
 use dyno_core::{
     role::Roles,
     users::{UserLogin, UserRegistration},
@@ -218,13 +218,16 @@ impl super::WindowState for AuthWindow {
                     );
 
                     if submit_btn.clicked() {
+                        control.set_loading();
                         match control.api() {
-                            Some(api) => api.login(self.login.data.clone(), control.tx().clone()),
+                            Some(api) => match self.section {
+                                AuthSection::Login => api.login(self.login.data.clone(), control.tx().clone()),
+                                AuthSection::Register => api.register(self.register.data.clone(), control.tx().clone()),
+                            }
                             None => {
+                                control.unset_loading();
                                 toast_warn!("Aplication not connected Api Server - trying reconnecting.. and try again.");
-                                if let Err(err) = control.reconnect_api() {
-                                    toast_error!("Failed to reconnect to Api - {err}");
-                                }
+                                control.reconnect_api();
                             }
                         }
                     }

@@ -1,18 +1,18 @@
-use super::api_url;
 use crate::AsyncMsg;
 use dyno_core::{
     crypto::TokenDetails,
-    reqwest::{Client, Response},
+    reqwest::{Client, IntoUrl, Response},
     users::{UserLogin, UserRegistration},
     ApiResponse,
 };
 
 pub async fn user_login(
+    url: impl IntoUrl,
     client: Client,
     login: UserLogin,
 ) -> Result<ApiResponse<TokenDetails>, AsyncMsg> {
     match client
-        .post(api_url!("/auth/login"))
+        .post(url)
         .json(&login)
         .send()
         .await
@@ -28,11 +28,12 @@ pub async fn user_login(
 }
 
 pub async fn user_register(
+    url: impl IntoUrl,
     client: Client,
     register: UserRegistration,
 ) -> Result<ApiResponse<i32>, AsyncMsg> {
     match client
-        .post(api_url!("/auth/register"))
+        .post(url)
         .json(&register)
         .send()
         .await
@@ -47,9 +48,14 @@ pub async fn user_register(
     }
 }
 
-pub async fn user_logout(client: Client) -> Result<AsyncMsg, AsyncMsg> {
+pub async fn user_logout(
+    url: impl IntoUrl,
+    client: Client,
+    token: impl std::fmt::Display,
+) -> Result<AsyncMsg, AsyncMsg> {
     match client
-        .get(api_url!("/auth/logout"))
+        .get(url)
+        .bearer_auth(token)
         .send()
         .await
         .and_then(Response::error_for_status)

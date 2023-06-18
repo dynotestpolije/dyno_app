@@ -11,7 +11,9 @@ pub mod setting;
 #[cfg(debug_assertions)]
 pub mod debug;
 
-pub trait WindowState {
+use downcast_rs::{impl_downcast, DowncastSync};
+
+pub trait WindowState: DowncastSync {
     fn show_window(
         &mut self,
         ctx: &eframe::egui::Context,
@@ -19,9 +21,8 @@ pub trait WindowState {
         state: &mut crate::state::DynoState,
     );
     #[inline]
-    fn set_open(&mut self, open: bool) {
-        unimplemented!("{open:#?}")
-    }
+    fn set_open(&mut self, _open: bool) {}
+
     #[inline]
     fn is_open(&self) -> bool {
         false
@@ -31,6 +32,7 @@ pub trait WindowState {
         self.set_open(!self.is_open())
     }
 }
+impl_downcast!(sync WindowState);
 
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -87,14 +89,17 @@ impl WindowStack {
     pub fn get_mut(&mut self) -> &mut [Box<dyn WindowState>; WS_SIZE] {
         &mut self.stack
     }
+
     #[inline]
-    pub fn idx(&self, idx: WSIdx) -> &dyn WindowState {
-        self.stack[idx as usize].as_ref()
+    pub fn idx<T: WindowState + 'static>(&self, idx: WSIdx) -> Option<&T> {
+        self.stack[idx as usize].downcast_ref::<T>()
     }
+
     #[inline]
-    pub fn idx_mut(&mut self, idx: WSIdx) -> &mut dyn WindowState {
-        self.stack[idx as usize].as_mut()
+    pub fn idx_mut<T: WindowState + 'static>(&mut self, idx: WSIdx) -> Option<&mut T> {
+        self.stack[idx as usize].downcast_mut::<T>()
     }
+
     #[inline]
     pub fn set_open(&mut self, idx: WSIdx, open: bool) {
         self.stack[idx as usize].set_open(open)

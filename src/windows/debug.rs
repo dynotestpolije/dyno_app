@@ -1,5 +1,5 @@
 use crate::widgets::{button::ButtonExt, DynoWidgets};
-use dyno_core::{chrono::NaiveDateTime, convertions, Data};
+use dyno_core::{chrono::Utc, convertions, data_structure::ExponentialFilter, Data};
 
 #[derive(Debug, Default)]
 pub struct DebugAction {
@@ -9,6 +9,7 @@ pub struct DebugAction {
     hp: f64,
     odo: f64,
     temp: f64,
+    speed_filter: ExponentialFilter<f64>,
     display_style: crate::widgets::DisplayStylePreset,
     start: bool,
 }
@@ -36,17 +37,18 @@ impl super::WindowState for DebugAction {
             temp,
             display_style,
             start,
+            speed_filter,
         } = self;
         eframe::egui::Window::new("Debug Window")
             .id("window_debug_simulation".into())
             .show(ctx, |ui| {
                 let hundread_euclid = ctx_time.rem_euclid(1.) * 100.;
                 *rpm = ctx_time.rem_euclid(15.) * 1000.;
-                *speed = ctx_time.rem_euclid(2.4) * 100.;
+                *speed = ctx_time.rem_euclid(24.) * 10.;
                 *torque = hundread_euclid;
                 *hp = hundread_euclid;
                 *temp = hundread_euclid;
-                *odo = ctx_time.rem_euclid(1.) * 0.01;
+                *odo += ctx_time.rem_euclid(1.) * 0.01;
                 eframe::egui::Grid::new("window_debug_grid")
                     .num_columns(2)
                     .spacing([40.0, 4.0])
@@ -89,18 +91,23 @@ impl super::WindowState for DebugAction {
             });
 
         if *start && ((ctx_time as u64 * 1000) % 250) == 0 {
+            let rpm = control
+                .config
+                .filter_rpm_engine
+                .next(RotationPerMinute::new(*rpm));
             let data = Data {
-                speed: KilometresPerHour::new(*speed),
-                rpm_roda: RotationPerMinute::new(*rpm),
-                rpm_engine: RotationPerMinute::new(*rpm),
+                speed: KilometresPerHour::new(speed_filter.next(*speed)),
+                rpm_roda: rpm,
+                rpm_engine: rpm,
                 odo: KiloMetres::new(*odo),
                 horsepower: HorsePower::new(*hp),
                 torque: NewtonMeter::new(*torque),
                 temp: Celcius::new(0.0),
-                time_stamp: NaiveDateTime::MIN,
+                time_stamp: Utc::now().naive_utc(),
                 ..Default::default()
             };
-            control.buffer_mut().push_data(data);
+            control.buffer_mut().data = data;
+            control.buffer_mut().process_data();
         }
     }
 }

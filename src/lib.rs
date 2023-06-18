@@ -66,6 +66,8 @@ pub enum AsyncMsg {
     OnSerialData(dyno_core::SerialData),
     OnMessage(String),
     OnError(DynoErr),
+    OnApiLogin,
+    OnApiRegister,
     OnApiLoadDyno(Vec<dyno_core::dynotests::DynoTest>),
     OnOpenBuffer(Box<dyno_core::BufferData>),
 }

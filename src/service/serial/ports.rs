@@ -1,7 +1,11 @@
 #![allow(unused)]
 
 use crate::{DynoErr, DynoResult};
-use serialport::{SerialPortInfo, SerialPortType::UsbPort, UsbPortInfo};
+use serialport::{
+    SerialPortInfo,
+    SerialPortType::{PciPort, UsbPort},
+    UsbPortInfo,
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct PortInfo {
@@ -23,6 +27,11 @@ impl PortInfo {
                 port_name,
                 vid,
                 pid,
+            }),
+            PciPort if port_name.contains("/dev/tty") => Some(Self {
+                port_name,
+                vid: 3220,
+                pid: 1406,
             }),
             _ => None,
         }

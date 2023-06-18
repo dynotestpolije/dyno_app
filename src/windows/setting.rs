@@ -72,7 +72,7 @@ impl SettingWindow {
                 row_label_value!(
                     im_ui,
                     Slider::new(cc, 20u32..=2000u32).suffix(" cc"),
-                    "Motor Name",
+                    "CC",
                     "nama motor (hanya untuk informasi data)"
                 );
                 im_ui.end_row();
@@ -152,6 +152,7 @@ impl SettingWindow {
         };
         CollapsingHeader::new("Info Motor Config")
             .id_source("dyno_info_motor_config_id")
+            .default_open(true)
             .show(ui, |ui| {
                 Grid::new("dyno_info_motor_config_grid_id")
                     .num_columns(2)
@@ -160,6 +161,7 @@ impl SettingWindow {
             });
         CollapsingHeader::new("Data Configuration")
             .id_source("dyno_configuration_id")
+            .default_open(true)
             .show(ui, |ui| {
                 Grid::new("dyno_configuration_grid_id")
                     .num_columns(2)

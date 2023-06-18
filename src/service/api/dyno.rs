@@ -2,11 +2,10 @@ use dyno_core::{
     asyncify,
     crypto::{checksum_from_bytes, compare_checksums},
     dynotests::{DynoTest, DynoTestDataInfo},
-    reqwest::{multipart, Client, Response},
+    reqwest::{multipart, Client, IntoUrl, Response},
     ApiResponse, BufferData, CompresedSaver as _, DynoErr, DynoResult,
 };
 
-use super::{api_url, data_url};
 use crate::AsyncMsg;
 
 #[inline]
@@ -33,12 +32,13 @@ pub(super) async fn get_data_part(data: BufferData) -> DynoResult<(multipart::Pa
 }
 
 pub async fn save(
+    url: impl IntoUrl,
     client: Client,
     token: impl std::fmt::Display,
     multiparts: multipart::Form,
 ) -> Result<AsyncMsg, AsyncMsg> {
     match client
-        .post(api_url!("/dyno"))
+        .post(url)
         .multipart(multiparts)
         .bearer_auth(token)
         .send()
@@ -48,7 +48,7 @@ pub async fn save(
     {
         Ok(resp) => match resp.json::<ApiResponse<i32>>().await {
             Ok(id) => Ok(AsyncMsg::message(format!(
-                "Save data is Success with id - {}",
+                "Save data is Success with id {}",
                 id.payload
             ))),
             Err(err) => Err(AsyncMsg::error(err)),
@@ -57,9 +57,9 @@ pub async fn save(
     }
 }
 
-pub async fn get(client: Client, token: impl std::fmt::Display) -> AsyncMsg {
+pub async fn get(url: impl IntoUrl, client: Client, token: impl std::fmt::Display) -> AsyncMsg {
     match client
-        .get(api_url!("/dyno?all=true"))
+        .get(url)
         .bearer_auth(token)
         .send()
         .await
@@ -67,9 +67,9 @@ pub async fn get(client: Client, token: impl std::fmt::Display) -> AsyncMsg {
         .map_err(AsyncMsg::error)
     {
         Ok(resp) => match resp
-            .json::<Vec<DynoTest>>()
+            .json::<ApiResponse<Vec<DynoTest>>>()
             .await
-            .map(AsyncMsg::on_load_dyno)
+            .map(|x| AsyncMsg::on_load_dyno(x.payload))
             .map_err(AsyncMsg::error)
         {
             Ok(ok) => ok,
@@ -80,12 +80,11 @@ pub async fn get(client: Client, token: impl std::fmt::Display) -> AsyncMsg {
 }
 
 pub async fn load_file(
+    url: impl IntoUrl,
     client: Client,
     token: impl std::fmt::Display,
-    url: impl std::fmt::Display,
     checksum: impl AsRef<[u8]>,
 ) -> AsyncMsg {
-    let url = data_url!(url);
     match client
         .get(url)
         .bearer_auth(token)

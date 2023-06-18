@@ -7,7 +7,7 @@ use eframe::epaint::{vec2, Color32, Rounding, Vec2};
 use egui_extras::{Column, TableBuilder};
 
 use crate::widgets::button::ButtonExt;
-use crate::{toast_error, toast_success, toast_warn};
+use crate::{toast_error, toast_warn};
 
 #[derive(Debug, Clone, Default)]
 pub struct OpenServerWindow {
@@ -43,11 +43,10 @@ impl super::WindowState for OpenServerWindow {
         let ui_window = |ui: &mut Ui| {
             ui.heading("List File in Server");
             ui.add_space(10.);
-
             TableBuilder::new(ui)
                 .striped(true)
                 .cell_layout(Layout::left_to_right(Align::Center))
-                .columns(Column::auto().at_least(10.0), 6)
+                .columns(Column::remainder().at_least(40.0), 6)
                 .resizable(true)
                 .header(20.0, |mut head_ui| {
                     head_ui.col(|col_ui| {
@@ -108,10 +107,7 @@ impl super::WindowState for OpenServerWindow {
                             match (open_btn.clicked(), control.api()) {
                                 (true, None) => {
                                     toast_error!("Something Wrong, Api is not Connected! trying to reconnecting..");
-                                    match control.reconnect_api() {
-                                        Ok(()) => toast_success!("Reconnecting Success! try again.."),
-                                        Err(err) => toast_error!("Failed Reconnecting Api with ERROR: [{err}]"),
-                                    }
+                                    control.reconnect_api();
                                 }
                                 (true, Some(api)) => {
                                     control.set_loading();
@@ -123,22 +119,20 @@ impl super::WindowState for OpenServerWindow {
                     })
                 });
 
+            ui.add_space(10.);
             let refresh_btn = ui.add(
                 Button::new(RichText::new("Refresh").color(Color32::BLACK))
                     .rounding(Rounding::same(4.))
                     .fill(Color32::LIGHT_BLUE)
                     .min_size(vec2(280., 30.)),
             );
-
+            ui.add_space(20.);
             if refresh_btn.clicked() {
                 match control.api() {
                     Some(api) => api.get_dyno(control.tx().clone()),
                     None => {
                         toast_warn!("Not connected to API, trying to reconnecting..");
-                        match control.reconnect_api() {
-                            Ok(()) => toast_success!("Reconnecting Success! try again.."),
-                            Err(err) => toast_error!("Failed Reconnecting Api with ERROR: [{err}]"),
-                        }
+                        control.reconnect_api();
                     }
                 }
             }

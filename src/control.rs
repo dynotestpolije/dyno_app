@@ -8,15 +8,14 @@ use crate::{
     widgets::{
         button::ButtonExt, segment_display::SegmentedDisplay, DynoFileManager, Gauge, RealtimePlot,
     },
-    windows::{WSIdx, WindowStack},
+    windows::{open_server::OpenServerWindow, WSIdx, WindowStack},
     AsyncMsg,
 };
 use dyno_core::{
     asyncify,
     chrono::{NaiveDateTime, Utc},
     crossbeam_channel::{unbounded, Receiver, Sender},
-    ignore_err, log, serde, BufferData, CompresedSaver, CsvSaver, Data, DynoConfig, DynoResult,
-    ExcelSaver,
+    ignore_err, log, serde, BufferData, CompresedSaver, CsvSaver, Data, DynoConfig, ExcelSaver,
 };
 use eframe::egui::*;
 use std::sync::{
@@ -46,11 +45,11 @@ pub struct DynoControl {
     buffer: BufferData,
 
     #[serde(skip)]
-    #[serde(default)]
-    serial_service: Option<SerialService>,
+    #[serde(default = "SerialService::new")]
+    serial: Option<SerialService>,
 
     #[serde(skip)]
-    #[serde(default)]
+    #[serde(default = "ApiService::new")]
     api_service: Option<ApiService>,
 
     plots: RealtimePlot,
@@ -84,7 +83,7 @@ impl Default for DynoControl {
             app_config: Default::default(),
             config: Default::default(),
             buffer: Default::default(),
-            serial_service: Default::default(),
+            serial: Default::default(),
             api_service: Default::default(),
             plots: Default::default(),
             async_channels: unbounded(),
@@ -126,14 +125,25 @@ impl DynoControl {
             plots: RealtimePlot::new(),
             buffer_saved: true,
             async_channels: unbounded(),
-            api_service: ApiService::new().map_or_else(
-                |err| {
-                    toast_error!("{err}");
-                    None
-                },
-                Some,
-            ),
+            api_service: ApiService::new(),
+            serial: SerialService::new(),
             ..Default::default()
+        }
+    }
+
+    pub fn init(&mut self) {
+        match self.api() {
+            Some(api) => api.set_active(self.config.clone(), self.tx().clone()),
+            None => self.reconnect_api(),
+        }
+        if self.serial.is_none() {
+            self.reconnect_serial();
+        }
+    }
+    pub fn deinit(&mut self) {
+        if let Some(api) = self.api() {
+            api.logout(self.tx().clone());
+            api.set_non_active(self.tx().clone());
         }
     }
 
@@ -174,18 +184,41 @@ impl DynoControl {
     pub fn rx(&self) -> &Receiver<AsyncMsg> {
         &self.async_channels.1
     }
+
     #[inline]
     pub fn api(&self) -> Option<&ApiService> {
         self.api_service.as_ref()
     }
+
     #[inline]
-    pub fn reconnect_api(&mut self) -> DynoResult<()> {
-        self.api_service = Some(ApiService::new()?);
-        Ok(())
+    pub fn reconnect_api(&mut self) {
+        if let Some(api) = ApiService::new() {
+            toast_success!("SUCCES! connected to Api Endpoint: {}", api.url);
+            api.set_active(self.config.clone(), self.tx().clone());
+            self.api_service = Some(api);
+        }
     }
+
+    #[inline]
+    pub fn reconnect_serial(&mut self) {
+        if let Some(serial) = SerialService::new() {
+            toast_success!(
+                "SUCCES! connected to Serial: [{}]:[{}-{}]",
+                serial.info.port_name,
+                serial.info.vid,
+                serial.info.pid
+            );
+            self.serial = Some(serial);
+        }
+    }
+
     #[inline]
     pub fn set_loading(&self) {
         self.loadings.store(true, Ordering::Relaxed);
+    }
+    #[inline]
+    pub fn unset_loading(&self) {
+        self.loadings.store(false, Ordering::Relaxed);
     }
 }
 
@@ -196,28 +229,43 @@ impl DynoControl {
             match msg {
                 AsyncMsg::OnSerialData(serial_data) => {
                     self.start_time += serial_data.period as u64;
-                    self.buffer.push_from_serial(&self.config, serial_data);
+                    self.buffer.push_from_serial(&mut self.config, serial_data);
                     self.buffer_saved = false;
                 }
                 AsyncMsg::OnOpenBuffer(buffer) => {
                     self.buffer = *buffer;
                     self.buffer_saved = false;
+                    self.unset_loading();
                 }
                 AsyncMsg::OnError(err) => {
-                    toast_error!("ERROR HAS OCCURRED - ({err})")
+                    toast_error!("{err}");
+                    self.unset_loading();
                 }
                 AsyncMsg::OnSavedBuffer(()) => {
                     self.buffer_saved = true;
-                    window_stack.set_open(WSIdx::ConfirmQuit, state.quitable());
-                    state.set_quitable(false);
+                    if state.quitable() {
+                        state.set_quit(true);
+                    }
+                    self.unset_loading();
                 }
                 AsyncMsg::OnCheckHealthApi(s) => {
                     if s.is_success() {
                         toast_success!("API Check Health is Success");
                     }
+                    self.unset_loading();
                 }
                 AsyncMsg::OnMessage(msg) => toast_info!("{msg}"),
-                AsyncMsg::OnApiLoadDyno(data) => dyno_core::log::error!("Ignoring {data:?}"),
+                AsyncMsg::OnApiLoadDyno(data) => {
+                    match window_stack.idx_mut::<OpenServerWindow>(WSIdx::OpenServer) {
+                        Some(window) => window.set_data(data),
+                        None => dyno_core::log::error!("Failed to Downcast winddow stack"),
+                    }
+                    self.unset_loading();
+                }
+                AsyncMsg::OnApiLogin | AsyncMsg::OnApiRegister => {
+                    window_stack.set_swap_open(WSIdx::Auth);
+                    self.unset_loading();
+                }
             }
         }
 
@@ -244,22 +292,32 @@ impl DynoControl {
         let dirpath = tp.path(self.paths.get_data_dir_folder("Saved"));
         tokio::spawn(async move {
             loadings.store(true, Ordering::Relaxed);
+            let file_name = format!("dynotest_{}", Utc::now().format("%+"));
             match tp {
-                DynoFileType::Dyno => match DynoFileManager::pick_binaries_async(dirpath).await {
-                    Some(file) => match asyncify!(move || buffer.compress_to_path(file.path())) {
-                        Ok(()) => ignore_err!(tx.send(AsyncMsg::OnSavedBuffer(()))),
-                        Err(err) => ignore_err!(tx.send(AsyncMsg::OnError(err))),
-                    },
-                    None => dyno_core::log::debug!("FileManager ppick file canceled"),
-                },
-                DynoFileType::Csv => match DynoFileManager::pick_csv_async(dirpath).await {
-                    Some(file) => match asyncify!(move || buffer.save_csv_from_path(file.path())) {
-                        Ok(()) => ignore_err!(tx.send(AsyncMsg::OnSavedBuffer(()))),
-                        Err(err) => ignore_err!(tx.send(AsyncMsg::OnError(err))),
-                    },
-                    None => dyno_core::log::debug!("FileManager ppick file canceled"),
-                },
-                DynoFileType::Excel => match DynoFileManager::pick_excel_async(dirpath).await {
+                DynoFileType::Dyno => {
+                    match DynoFileManager::save_binaries_async(file_name, dirpath).await {
+                        Some(file) => match asyncify!(move || buffer.compress_to_path(file.path()))
+                        {
+                            Ok(()) => ignore_err!(tx.send(AsyncMsg::OnSavedBuffer(()))),
+                            Err(err) => ignore_err!(tx.send(AsyncMsg::OnError(err))),
+                        },
+                        None => dyno_core::log::debug!("FileManager ppick file canceled"),
+                    }
+                }
+                DynoFileType::Csv => {
+                    match DynoFileManager::save_csv_async(file_name, dirpath).await {
+                        Some(file) => {
+                            match asyncify!(move || buffer.save_csv_from_path(file.path())) {
+                                Ok(()) => ignore_err!(tx.send(AsyncMsg::OnSavedBuffer(()))),
+                                Err(err) => ignore_err!(tx.send(AsyncMsg::OnError(err))),
+                            }
+                        }
+                        None => dyno_core::log::debug!("FileManager ppick file canceled"),
+                    }
+                }
+                DynoFileType::Excel => match DynoFileManager::save_excel_async(file_name, dirpath)
+                    .await
+                {
                     Some(file) => match asyncify!(move || buffer.save_excel_from_path(file.path()))
                     {
                         Ok(()) => ignore_err!(tx.send(AsyncMsg::OnSavedBuffer(()))),
@@ -267,7 +325,7 @@ impl DynoControl {
                     },
                     None => dyno_core::log::debug!("FileManager ppick file canceled"),
                 },
-            }
+            };
             loadings.store(false, Ordering::Relaxed);
         });
     }
@@ -416,7 +474,7 @@ impl DynoControl {
 
     #[inline(always)]
     pub fn bottom_status(&mut self, ui: &mut Ui) {
-        let layout_ui_status = |ltr_ui: &mut Ui| match &mut self.serial_service {
+        let layout_ui_status = |ltr_ui: &mut Ui| match &mut self.serial {
             Some(serial) => {
                 let (status, color) = if serial.is_open() {
                     ("STATUS: Running", Color32::YELLOW)
@@ -473,21 +531,15 @@ impl DynoControl {
                         "PORT INFO: [NO PORT DETECTED] (XX:XX), click to try Initialize the port",
                     );
                 if ltr_ui.button("\u{1F50C} Try Reconnect").clicked() {
-                    self.serial_service = match SerialService::new() {
-                        Ok(serial) => {
-                            toast_success!(
-                                "SUCCES! connected to [{}] - [{}:{}]",
-                                serial.info.port_name,
-                                serial.info.vid,
-                                serial.info.pid
-                            );
-                            Some(serial)
-                        }
-                        Err(err) => {
-                            toast_error!("Failed to Start Serial - ({err})");
-                            None
-                        }
-                    };
+                    if let Some(serial) = SerialService::new() {
+                        toast_success!(
+                            "SUCCES! connected to [{}] - [{}:{}]",
+                            serial.info.port_name,
+                            serial.info.vid,
+                            serial.info.pid
+                        );
+                        self.serial = Some(serial);
+                    }
                 }
             }
         };

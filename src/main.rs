@@ -39,14 +39,18 @@ impl Applications {
         let app_creator: eframe::AppCreator = Box::new(|cc| {
             Box::new(
                 cc.storage
-                    .and_then(|s| eframe::get_value::<Self>(s, APP_KEY))
-                    .unwrap_or_else(|| Self {
-                        window_stack: WindowStack::new(),
-                        control,
-                        ..Default::default()
+                    .and_then(|s| eframe::get_value::<Self>(s, APP_KEY).map(Self::init))
+                    .unwrap_or_else(|| {
+                        Self {
+                            window_stack: WindowStack::new(),
+                            control,
+                            ..Default::default()
+                        }
+                        .init()
                     }),
             )
         });
+
         if let Err(err) = eframe::run_native(PACKAGE_INFO.app_name, opt, app_creator) {
             dyno_core::log::error!("Failed to run app eframe in native - {err}");
             if !msg_dialog_err!(
@@ -57,6 +61,13 @@ impl Applications {
                 dyno_core::log::warn!("ERROR: TODO! report the error from run native");
             }
         }
+    }
+    pub fn init(mut self) -> Self {
+        self.control.init();
+        self
+    }
+    pub fn deinit(&mut self) {
+        self.control.deinit();
     }
 }
 
@@ -121,6 +132,7 @@ impl eframe::App for Applications {
     fn on_close_event(&mut self) -> bool {
         use dynotest_app::windows::WSIdx::{ConfirmQuit, ConfirmUnsaved};
         if !self.control.is_buffer_saved() && !self.state.quit() {
+            self.state.set_quitable(true);
             self.window_stack.set_open(ConfirmUnsaved, true);
             return false;
         }
@@ -139,6 +151,10 @@ impl eframe::App for Applications {
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, APP_KEY, self);
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.deinit();
     }
 }
 

@@ -948,6 +948,7 @@ name = "dynotest_app"
 version = "0.0.1"
 dependencies = [
  "directories",
+ "downcast-rs",
  "dyno_core",
  "eframe",
  "egui_extras",

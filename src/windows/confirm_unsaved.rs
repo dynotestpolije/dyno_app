@@ -61,7 +61,6 @@ impl super::WindowState for ConfirmUnsavedWindow {
             }) => {
                 self.open = !self.open;
                 state.set_operator(crate::state::OperatorData::save_default());
-                state.set_quitable(true);
             }
             Some(InnerResponse {
                 inner: Some(Some(ButtonKind::No)),
@@ -69,7 +68,9 @@ impl super::WindowState for ConfirmUnsavedWindow {
             }) => {
                 self.open = !self.open;
                 state.set_operator(crate::state::OperatorData::Noop);
-                state.set_quitable(true);
+                if state.quitable() {
+                    state.set_quit(true);
+                }
             }
             Some(InnerResponse {
                 inner: Some(Some(ButtonKind::Cancel)),

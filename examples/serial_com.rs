@@ -22,13 +22,7 @@ fn main() {
         })
     });
 
-    let mut serial_service = match service::SerialService::new() {
-        Ok(k) => k,
-        Err(err) => {
-            eprintln!("ERROR: Failed to crate service - {err}");
-            return;
-        }
-    };
+    let Some(mut serial_service) = service::SerialService::new() else { return };
     let (tx, rx) = unbounded();
     let handle = match serial_service.start(tx) {
         Ok(k) => k,

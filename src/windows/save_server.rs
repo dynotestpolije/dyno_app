@@ -1,10 +1,8 @@
-use dyno_core::{Cylinder, MotorType, Stroke as InfoMotorStroke, Transmition};
-use eframe::egui::{Button, DragValue, Id, LayerId, RichText, TextEdit, Ui, Window};
+use eframe::egui::{Button, Id, LayerId, RichText, Ui, Window};
 use eframe::emath::Align2;
 use eframe::epaint::{vec2, Color32, Rounding, Vec2};
 
 use crate::toast_warn;
-use crate::widgets::DynoWidgets;
 
 #[derive(Debug, Clone, Default)]
 pub struct SaveServerWindow {
@@ -34,43 +32,10 @@ impl super::WindowState for SaveServerWindow {
         );
 
         let ui_window = |ui: &mut Ui| {
-            ui.heading("The Info Dynotests: ");
+            ui.heading("Info Dynotests: ");
             ui.add_space(10.);
-            match &mut control.config.motor_type {
-                MotorType::Electric(_) => todo!(),
-                MotorType::Engine(ref mut info) => {
-                    ui.separator();
-                    ui.horizontal_wrapped(|horzui| {
-                        horzui
-                            .add(TextEdit::singleline(&mut info.name).hint_text("isi nama motor"));
-                        horzui.separator();
-                        horzui.add(
-                            DragValue::new(&mut info.cc)
-                                .speed(1)
-                                .prefix("Volume Cilinder: ")
-                                .suffix(" cc")
-                                .min_decimals(10)
-                                .max_decimals(30),
-                        );
-                    });
-                    ui.separator();
-                    ui.horizontal_wrapped(|horzui| {
-                        horzui
-                            .selectable_value_from_iter(&mut info.cylinder, Cylinder::into_iter());
-                        horzui.separator();
-                        horzui.selectable_value_from_iter(
-                            &mut info.stroke,
-                            InfoMotorStroke::into_iter(),
-                        );
-                        horzui.separator();
-                        horzui.selectable_value_from_iter(
-                            &mut info.transmition,
-                            Transmition::into_iter(),
-                        );
-                    });
-                }
-            };
-
+            super::setting::SettingWindow::setting_info(ui, &mut control.config);
+            ui.add_space(10.);
             let submit_btn = ui.add(
                 Button::new(RichText::new("Save").color(Color32::BLACK))
                     .rounding(Rounding::same(4.))

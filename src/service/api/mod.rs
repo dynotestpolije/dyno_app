@@ -12,31 +12,54 @@ use dyno_core::{
     crypto::TokenDetails,
     dynotests::DynoTestDataInfo,
     ignore_err,
-    reqwest::{multipart, Client, Response},
+    reqwest::{
+        header::{HeaderMap, HeaderValue},
+        multipart, Client, Response,
+    },
     tokio,
     users::{UserLogin, UserRegistration},
-    BufferData, DynoConfig, DynoErr, DynoResult,
+    BufferData, DynoConfig, DynoErr,
 };
 use eframe::epaint::mutex::Mutex;
 
-use crate::AsyncMsg;
+use crate::{toast_error, AsyncMsg};
 
-static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
+static APP_USER_AGENT: &str = concat!("Dyno/Desktop-", env!("CARGO_PKG_VERSION"),);
 
 #[derive(Clone)]
 pub struct ApiService {
-    client: Client,
+    pub url: String,
+    pub client: Client,
     logined: Arc<AtomicBool>,
     token_session: Arc<Mutex<Option<TokenDetails>>>,
 }
 
 impl ApiService {
-    pub fn new() -> DynoResult<Self> {
-        let client = Client::builder()
+    pub fn new() -> Option<Self> {
+        let url = std::env::var("DYNO_SERVER_URL").unwrap_or_else(|err| {
+            dyno_core::log::error!(
+                "Failed to Get DYNO_SERVER_URL from EnvVar, defaulting to [localhost:8000] - {err}"
+            );
+            "http://127.0.0.1:3000".to_owned()
+        });
+        let client = match Client::builder()
+            .default_headers({
+                let mut headers = HeaderMap::new();
+                headers.insert("AppDyno", HeaderValue::from_static("Desktop"));
+                headers
+            })
             .user_agent(APP_USER_AGENT)
             .build()
-            .map_err(DynoErr::service_error)?;
-        Ok(Self {
+            .map_err(DynoErr::service_error)
+        {
+            Ok(ok) => ok,
+            Err(err) => {
+                toast_error!("Failed to create Api Client - {err}");
+                return None;
+            }
+        };
+        Some(Self {
+            url,
             client,
             logined: Arc::new(AtomicBool::new(false)),
             token_session: Default::default(),
@@ -53,14 +76,23 @@ impl ApiService {
         let lock = self.token_session.lock();
         lock.as_ref().and_then(|tok| tok.token.clone())
     }
+
+    fn api_url(&self, url: impl AsRef<str>) -> String {
+        format!("{}/api{}", self.url, url.as_ref())
+    }
+
+    fn data_url(&self, url: impl AsRef<str>) -> String {
+        format!("{}{}", self.url, url.as_ref())
+    }
 }
 
 impl ApiService {
     pub fn check_health(&self, tx: Sender<AsyncMsg>) {
         let client = self.client.clone();
+        let url = self.api_url("/health");
         let async_spawn = async move {
             match client
-                .get(api_url!("/health"))
+                .get(url)
                 .send()
                 .await
                 .and_then(Response::error_for_status)
@@ -73,17 +105,55 @@ impl ApiService {
         tokio::spawn(async_spawn);
     }
 
+    pub fn set_active(&self, cfgs: DynoConfig, tx: Sender<AsyncMsg>) {
+        let client = self.client.clone();
+        let url = self.api_url("/active");
+        let async_spawn = async move {
+            match client
+                .post(url)
+                .json(&cfgs)
+                .send()
+                .await
+                .and_then(Response::error_for_status)
+                .map_err(DynoErr::service_error)
+            {
+                Ok(_resp) => tx.send(AsyncMsg::message("Success Connecting to API Server!")),
+                Err(err) => tx.send(AsyncMsg::error(err)),
+            }
+        };
+        tokio::spawn(async_spawn);
+    }
+
+    pub fn set_non_active(&self, tx: Sender<AsyncMsg>) {
+        let client = self.client.clone();
+        let url = self.api_url("/non_active");
+        let async_spawn = async move {
+            match client
+                .post(url)
+                .send()
+                .await
+                .and_then(Response::error_for_status)
+                .map_err(DynoErr::service_error)
+            {
+                Ok(_resp) => tx.send(AsyncMsg::message("Success Disconnecting to API Server!")),
+                Err(err) => tx.send(AsyncMsg::error(err)),
+            }
+        };
+        tokio::spawn(async_spawn);
+    }
+
     pub fn login(&self, login: UserLogin, tx: Sender<AsyncMsg>) {
         let client = self.client.clone();
         let logined = self.logined.clone();
         let token_session = self.token_session.clone();
-
+        let url = self.api_url("/auth/login");
         tokio::spawn(async move {
-            match user::user_login(client, login).await {
+            match user::user_login(url, client, login).await {
                 Ok(resp) => {
                     logined.store(true, Ordering::Relaxed);
                     let mut token_lock = token_session.lock();
                     *token_lock = Some(resp.payload);
+                    ignore_err!(tx.send(AsyncMsg::OnApiLogin));
                 }
                 Err(err) => ignore_err!(tx.send(err)),
             }
@@ -92,27 +162,35 @@ impl ApiService {
 
     pub fn register(&self, register: UserRegistration, tx: Sender<AsyncMsg>) {
         let client = self.client.clone();
+        let url = self.api_url("/auth/register");
 
         tokio::spawn(async move {
-            match user::user_register(client, register).await {
-                Ok(ok) => ignore_err!(tx.send(AsyncMsg::OnMessage(format!(
-                    "Success Register user in Api Endpoint, with response:{} !",
-                    ok.payload
-                )))),
+            match user::user_register(url, client, register).await {
+                Ok(_ok) => ignore_err!(tx.send(AsyncMsg::OnApiRegister)),
                 Err(err) => ignore_err!(tx.send(err)),
             }
         });
     }
 
     pub fn logout(&self, tx: Sender<AsyncMsg>) {
-        if !self.is_logined() {
-            return;
-        }
+        let token = match self.get_token() {
+            Some(tok) => tok,
+            None => {
+                ignore_err!(tx.send(AsyncMsg::error(DynoErr::api_error(
+                    "You are not Login, please Login first."
+                ))));
+                return;
+            }
+        };
+
+        let logined = self.logined.clone();
         let token_session = self.token_session.clone();
         let client = self.client.clone();
+        let url = self.api_url("/auth/logout");
         tokio::spawn(async move {
-            match user::user_logout(client).await {
+            match user::user_logout(url, client, token).await {
                 Ok(ok) => {
+                    logined.store(false, Ordering::Relaxed);
                     {
                         let mut token_lock = token_session.lock();
                         *token_lock = None;
@@ -137,12 +215,15 @@ impl ApiService {
         let token = match self.get_token() {
             Some(tok) => tok,
             None => {
-                ignore_err!(tx.send(AsyncMsg::error("You are not Login, please Login first.")));
+                ignore_err!(tx.send(AsyncMsg::error(DynoErr::api_error(
+                    "You are not Login, please Login first."
+                ))));
                 return;
             }
         };
 
         let client = self.client.clone();
+        let url = self.api_url("/dyno");
 
         tokio::spawn(async move {
             let (file_part, checksum_hex) = match dyno::get_data_part(data).await {
@@ -169,7 +250,7 @@ impl ApiService {
                 .part("data", file_part)
                 .part("info", info_part);
 
-            match dyno::save(client, token, multiparts).await {
+            match dyno::save(url, client, token, multiparts).await {
                 Ok(ok) => ignore_err!(tx.send(ok)),
                 Err(err) => ignore_err!(tx.send(err)),
             }
@@ -180,14 +261,16 @@ impl ApiService {
         let token = match self.get_token() {
             Some(tok) => tok,
             None => {
-                ignore_err!(tx.send(AsyncMsg::error("You are not Login, please Login first.")));
+                ignore_err!(tx.send(AsyncMsg::error(DynoErr::api_error(
+                    "You are not Login, please Login first."
+                ))));
                 return;
             }
         };
         let client = self.client.clone();
-
+        let url = self.api_url("/dyno?all=true");
         tokio::spawn(async move {
-            let result = dyno::get(client, token).await;
+            let result = dyno::get(url, client, token).await;
             ignore_err!(tx.send(result));
         });
     }
@@ -196,31 +279,17 @@ impl ApiService {
         let token = match self.get_token() {
             Some(tok) => tok,
             None => {
-                ignore_err!(tx.send(AsyncMsg::error("You are not Login, please Login first.")));
+                ignore_err!(tx.send(AsyncMsg::error(DynoErr::api_error(
+                    "You are not Login, please Login first."
+                ))));
                 return;
             }
         };
         let client = self.client.clone();
-
+        let url = self.data_url(url);
         tokio::spawn(async move {
-            let result = dyno::load_file(client, token, url, checksum).await;
+            let result = dyno::load_file(url, client, token, checksum).await;
             ignore_err!(tx.send(result));
         });
     }
 }
-
-macro_rules! api_url {
-    ($paths:literal) => {
-        concat!(env!("API_SERVER_URL"), "/api", $paths)
-    };
-}
-
-macro_rules! data_url {
-    ($paths:literal) => {
-        concat!(env!("API_SERVER_URL"), "/data", $paths)
-    };
-    ($paths:expr) => {
-        format!("{}/{}", env!("API_SERVER_URL"), $paths)
-    };
-}
-use {api_url, data_url};
