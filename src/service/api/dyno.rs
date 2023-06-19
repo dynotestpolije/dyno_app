@@ -13,7 +13,8 @@ pub(super) async fn get_info_part(config: DynoTestDataInfo) -> DynoResult<multip
     asyncify!(move || config.compress().and_then(|info| {
         let len = info.len() as _;
         multipart::Part::stream_with_length(info, len)
-            .mime_str("application/json")
+            .file_name(dyno_core::uuid::Uuid::new_v4().simple().to_string())
+            .mime_str("application/octet-stream")
             .map_err(DynoErr::service_error)
     }))
 }
