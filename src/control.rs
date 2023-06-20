@@ -292,10 +292,14 @@ impl DynoControl {
         let dirpath = tp.path(self.paths.get_data_dir_folder("Saved"));
         tokio::spawn(async move {
             loadings.store(true, Ordering::Relaxed);
-            let file_name = format!("dynotest_{}", Utc::now().format("%+"));
             match tp {
                 DynoFileType::Dyno => {
-                    match DynoFileManager::save_binaries_async(file_name, dirpath).await {
+                    match DynoFileManager::save_binaries_async(
+                        format!("dynotest_{}.dyno", Utc::now().timestamp()),
+                        dirpath,
+                    )
+                    .await
+                    {
                         Some(file) => match asyncify!(move || buffer.compress_to_path(file.path()))
                         {
                             Ok(()) => ignore_err!(tx.send(AsyncMsg::OnSavedBuffer(()))),
@@ -305,7 +309,12 @@ impl DynoControl {
                     }
                 }
                 DynoFileType::Csv => {
-                    match DynoFileManager::save_csv_async(file_name, dirpath).await {
+                    match DynoFileManager::save_csv_async(
+                        format!("dynotest_{}.csv", Utc::now().timestamp()),
+                        dirpath,
+                    )
+                    .await
+                    {
                         Some(file) => {
                             match asyncify!(move || buffer.save_csv_from_path(file.path())) {
                                 Ok(()) => ignore_err!(tx.send(AsyncMsg::OnSavedBuffer(()))),
@@ -315,8 +324,11 @@ impl DynoControl {
                         None => dyno_core::log::debug!("FileManager ppick file canceled"),
                     }
                 }
-                DynoFileType::Excel => match DynoFileManager::save_excel_async(file_name, dirpath)
-                    .await
+                DynoFileType::Excel => match DynoFileManager::save_excel_async(
+                    format!("dynotest_{}.xlsx", Utc::now().timestamp()),
+                    dirpath,
+                )
+                .await
                 {
                     Some(file) => match asyncify!(move || buffer.save_excel_from_path(file.path()))
                     {
@@ -426,7 +438,12 @@ impl DynoControl {
         ui.menu_button("View", |submenu_ui| {
             submenu_ui.checkbox(state.show_bottom_panel_mut(), "Bottom Panel");
             submenu_ui.checkbox(state.show_left_panel_mut(), "Left Panel");
-            submenu_ui.checkbox(state.show_logger_window_mut(), "Logger Window");
+            if submenu_ui
+                .checkbox(state.show_logger_window_mut(), "Logger Window")
+                .changed()
+            {
+                window_stack.set_open(WSIdx::Logger, state.show_logger_window())
+            }
         });
         if ui.button("Config").clicked() {
             log::debug!("Config submenu clicked");
@@ -476,8 +493,9 @@ impl DynoControl {
     pub fn bottom_status(&mut self, ui: &mut Ui) {
         let layout_ui_status = |ltr_ui: &mut Ui| match &mut self.serial {
             Some(serial) => {
-                let (status, color) = if serial.is_open() {
-                    ("STATUS: Running", Color32::YELLOW)
+                let serial_open = serial.is_open();
+                let (status, color) = if serial_open {
+                    ("STATUS: Running", Color32::BLUE)
                 } else {
                     ("STATUS: Connected", Color32::GREEN)
                 };
@@ -499,12 +517,12 @@ impl DynoControl {
                     .on_hover_text("Click to Stop/Pause the Service");
                 let btn_reset = ltr_ui
                     .small_reset_button()
-                    .on_hover_text("Click to Reset recorded data buffer");
+                    .on_hover_text("Click to Stop and Reset recorded data buffer");
                 match (
                     btn_start.clicked(),
                     btn_stop.clicked(),
                     btn_reset.clicked(),
-                    serial.is_open(),
+                    serial_open,
                 ) {
                     (true, _, _, false) => {
                         if let Err(err) = serial.start(self.async_channels.0.clone()) {
@@ -520,7 +538,8 @@ impl DynoControl {
                         serial.stop();
                         self.buffer.clean();
                     }
-                    _ => (),
+                    (_, _, true, _) => self.buffer.clean(),
+                    _ => {}
                 }
             }
             None => {

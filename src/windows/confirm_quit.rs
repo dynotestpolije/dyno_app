@@ -56,6 +56,7 @@ impl super::WindowState for ConfirmQuitWindow {
                 .inner
             })
         {
+            self.open = false;
             state.set_quitable(b);
             state.set_quit(b);
         }
