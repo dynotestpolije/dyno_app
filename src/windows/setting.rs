@@ -16,6 +16,7 @@ enum PanelSetting {
 
 #[derive(Clone, Default)]
 pub struct SettingWindow {
+    open: bool,
     panel: PanelSetting,
     edit_path: bool,
 }
@@ -24,7 +25,7 @@ impl SettingWindow {
     pub fn new() -> Self {
         Self {
             panel: PanelSetting::default(),
-            edit_path: false,
+            ..Default::default()
         }
     }
 
@@ -71,7 +72,7 @@ impl SettingWindow {
                 row_label_value!(
                     im_ui,
                     Slider::new(cc, 20u32..=2000u32).suffix(" cc"),
-                    "Motor Name",
+                    "CC",
                     "nama motor (hanya untuk informasi data)"
                 );
                 im_ui.end_row();
@@ -151,6 +152,7 @@ impl SettingWindow {
         };
         CollapsingHeader::new("Info Motor Config")
             .id_source("dyno_info_motor_config_id")
+            .default_open(true)
             .show(ui, |ui| {
                 Grid::new("dyno_info_motor_config_grid_id")
                     .num_columns(2)
@@ -159,6 +161,7 @@ impl SettingWindow {
             });
         CollapsingHeader::new("Data Configuration")
             .id_source("dyno_configuration_id")
+            .default_open(true)
             .show(ui, |ui| {
                 Grid::new("dyno_configuration_grid_id")
                     .num_columns(2)
@@ -173,11 +176,12 @@ impl super::WindowState for SettingWindow {
         &mut self,
         ctx: &eframe::egui::Context,
         control: &mut crate::control::DynoControl,
-        state: &mut crate::state::DynoState,
+        _state: &mut crate::state::DynoState,
     ) {
+        let mut open = self.open;
         Window::new("Dyno Control Settings")
             .id(Id::new("id_control_setting"))
-            .open(state.show_config_mut())
+            .open(&mut open)
             .collapsible(false)
             .resizable(true)
             .show(ctx, |ui| {
@@ -217,5 +221,16 @@ impl super::WindowState for SettingWindow {
                         };
                     });
             });
+        self.open = open;
+    }
+
+    #[inline]
+    fn set_open(&mut self, open: bool) {
+        self.open = open;
+    }
+
+    #[inline]
+    fn is_open(&self) -> bool {
+        self.open
     }
 }

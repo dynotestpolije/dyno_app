@@ -44,9 +44,8 @@ path = "egui/crates/egui_extras"
 
 [dependencies.dyno_core]
 # if in release change to git url main branch
-# git = "https://github.com/dynotestpolije/dyno_types.git"
-# branch = "main" 
-path = "../dyno_core"
+git = "https://github.com/dynotestpolije/dyno_core.git"
+branch = "main" 
 features = ["frontend", "checksum", "use_async", "use_excel", "use_log"]
 
 [dependencies.image]

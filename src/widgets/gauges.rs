@@ -40,6 +40,10 @@ impl Gauge {
         Self::new(GaugeTypes::HorsepowerGauge, value.to_f32()).animated(true)
     }
 
+    pub fn temperature(value: impl Numeric) -> Self {
+        Self::new(GaugeTypes::Temperature, value.to_f32()).animated(true)
+    }
+
     pub fn diameter(mut self, diameter: f32) -> Self {
         self.diameter = Some(diameter);
         self
@@ -160,6 +164,7 @@ impl GaugeBG<'_> {
             GaugeTypes::SpeedGauge => GaugeBG::Image(&COLORIMAGE_GAUGE_SPEED),
             GaugeTypes::TorqueGauge => GaugeBG::Image(&COLORIMAGE_GAUGE_TORQUE),
             GaugeTypes::HorsepowerGauge => GaugeBG::Image(&COLORIMAGE_GAUGE_HP),
+            GaugeTypes::Temperature => GaugeBG::Color(crate::COLOR_BLUE_DYNO_DARK),
         }
     }
 
@@ -211,6 +216,7 @@ pub enum GaugeTypes {
     SpeedGauge,
     TorqueGauge,
     HorsepowerGauge,
+    Temperature,
 }
 impl GaugeTypes {
     #[inline(always)]
@@ -257,6 +263,14 @@ impl GaugeTypes {
                 min_degree: 50f32,
                 max_degree: 310f32,
             },
+            GaugeTypes::Temperature => GaugePreset {
+                needle_color: Color32::from_rgb(0, 204, 255),
+                foreground_color: Color32::from_rgb(85, 221, 255),
+                min: 0f32,
+                max: 100f32,
+                min_degree: 50f32,
+                max_degree: 310f32,
+            },
         }
     }
 }
@@ -271,6 +285,7 @@ impl std::fmt::Display for GaugeTypes {
             GaugeTypes::SpeedGauge => f.write_str("Speed Gauge"),
             GaugeTypes::TorqueGauge => f.write_str("Torque Gauge"),
             GaugeTypes::HorsepowerGauge => f.write_str("Torque Gauge"),
+            GaugeTypes::Temperature => f.write_str("Temperature Gauge"),
         }
     }
 }

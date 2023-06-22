@@ -1,10 +1,10 @@
 // #![warn(clippy::all, rust_2018_idioms)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use dyno_core::{ignore_err, log, serde, tokio};
+use dyno_core::{ignore_err, serde, tokio};
 use dynotest_app::{
-    control::DynoControl, init_logger, msg_dialog_err, state::DynoState, windows, PanelId, APP_KEY,
-    PACKAGE_INFO, TOAST_MSG,
+    control::DynoControl, init_logger, msg_dialog_err, state::DynoState, windows::WindowStack,
+    PanelId, APP_KEY, PACKAGE_INFO, TOAST_MSG,
 };
 use eframe::egui::*;
 
@@ -15,24 +15,17 @@ pub struct Applications {
     control: DynoControl,
 
     #[serde(skip)]
-    window_states: windows::WindowStack,
+    window_stack: WindowStack,
 
     state: DynoState,
-
-    #[cfg(debug_assertions)]
-    #[cfg_attr(debug_assertions, serde(skip))]
-    debug: windows::DebugAction,
 }
 
 impl Default for Applications {
     fn default() -> Self {
         Self {
-            window_states: windows::window_states_new(),
+            window_stack: WindowStack::new(),
             control: DynoControl::new(),
             state: DynoState::new(),
-
-            #[cfg(debug_assertions)]
-            debug: Default::default(),
         }
     }
 }
@@ -46,14 +39,18 @@ impl Applications {
         let app_creator: eframe::AppCreator = Box::new(|cc| {
             Box::new(
                 cc.storage
-                    .and_then(|s| eframe::get_value::<Self>(s, APP_KEY))
-                    .unwrap_or_else(|| Self {
-                        window_states: windows::window_states_new(),
-                        control,
-                        ..Default::default()
+                    .and_then(|s| eframe::get_value::<Self>(s, APP_KEY).map(Self::init))
+                    .unwrap_or_else(|| {
+                        Self {
+                            window_stack: WindowStack::new(),
+                            control,
+                            ..Default::default()
+                        }
+                        .init()
                     }),
             )
         });
+
         if let Err(err) = eframe::run_native(PACKAGE_INFO.app_name, opt, app_creator) {
             dyno_core::log::error!("Failed to run app eframe in native - {err}");
             if !msg_dialog_err!(
@@ -64,6 +61,13 @@ impl Applications {
                 dyno_core::log::warn!("ERROR: TODO! report the error from run native");
             }
         }
+    }
+    pub fn init(mut self) -> Self {
+        self.control.init();
+        self
+    }
+    pub fn deinit(&mut self) {
+        self.control.deinit();
     }
 }
 
@@ -78,34 +82,8 @@ impl Applications {
                 uibar.image(IMG.texture_id(uibar.ctx()), IMG.size_vec2());
                 uibar.heading("DynoTests Polije");
                 uibar.separator();
-                self.state.menubar(uibar);
-                uibar.with_layout(Layout::right_to_left(Align::Center), |rtl_ui| {
-                    widgets::global_dark_light_mode_switch(rtl_ui);
-                    match self.control.api() {
-                        Some(api) if api.is_logined() => {
-                            if rtl_ui.button("Save to Server").clicked() {
-                                log::info!("Saving to server...");
-                                self.state.swap_show_save_server();
-                            }
-                            if rtl_ui.button("Logout").clicked() {
-                                log::info!("Logout button clicked");
-                                api.logout(self.control.tx().clone());
-                            }
-                        }
-                        _ => {
-                            if rtl_ui
-                                .button("Login")
-                                .on_hover_text(
-                                    "login first to access server, like saving data to server.",
-                                )
-                                .clicked()
-                            {
-                                log::info!("Login bottom clicked");
-                                self.state.swap_show_auth_window();
-                            }
-                        }
-                    }
-                });
+                self.control
+                    .top_panel(uibar, &mut self.window_stack, &mut self.state);
             })
         });
 
@@ -127,12 +105,10 @@ impl Applications {
 
 impl eframe::App for Applications {
     fn update(&mut self, ctx: &Context, frame: &mut eframe::Frame) {
-        #[cfg(debug_assertions)]
-        {
-            self.debug.show_window(ctx, self.control.buffer_mut());
-        }
-        for window in &mut self.window_states {
-            window.show_window(ctx, &mut self.control, &mut self.state)
+        for window in self.window_stack.iter_mut() {
+            if window.is_open() {
+                window.show_window(ctx, &mut self.control, &mut self.state)
+            }
         }
         crate::TOAST_MSG.lock().show(ctx);
 
@@ -149,18 +125,21 @@ impl eframe::App for Applications {
     }
 
     fn post_rendering(&mut self, _window_size_px: [u32; 2], _frame: &eframe::Frame) {
-        self.control.on_pos_render(&mut self.state);
+        self.control
+            .on_pos_render(&mut self.window_stack, &mut self.state);
     }
 
     fn on_close_event(&mut self) -> bool {
+        use dynotest_app::windows::WSIdx::{ConfirmQuit, ConfirmUnsaved};
         if !self.control.is_buffer_saved() && !self.state.quit() {
-            self.state.set_show_buffer_unsaved(true);
+            self.state.set_quitable(true);
+            self.window_stack.set_open(ConfirmUnsaved, true);
             return false;
         }
         if self.state.quitable() {
             true
         } else {
-            self.state.set_show_quitable(true);
+            self.window_stack.set_open(ConfirmQuit, true);
             false
         }
     }
@@ -172,6 +151,10 @@ impl eframe::App for Applications {
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, APP_KEY, self);
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.deinit();
     }
 }
 

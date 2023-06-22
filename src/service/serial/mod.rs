@@ -17,7 +17,7 @@ use std::sync::{
     Arc,
 };
 
-use crate::AsyncMsg;
+use crate::{toast_error, AsyncMsg};
 
 use self::impl_serial::open_async;
 
@@ -31,11 +31,23 @@ impl SerialService {
     pub const MAX_BUFFER_SIZE: usize = 1024;
     const BAUD_RATE: u32 = 512_000;
 
-    pub fn new() -> DynoResult<Self> {
-        let info = ports::get_dyno_port()?.ok_or(DynoErr::service_error(
-            "Failed to get port info, there is no port available in this machine",
-        ))?;
-        Ok(Self {
+    pub fn new() -> Option<Self> {
+        let info = match ports::get_dyno_port() {
+            Ok(ok) => match ok {
+                Some(some) => some,
+                None => {
+                    toast_error!(
+                        "Failed to get port info, there is no port available in this machine"
+                    );
+                    return None;
+                }
+            },
+            Err(err) => {
+                toast_error!("Failed to get port info, {err}");
+                return None;
+            }
+        };
+        Some(Self {
             info,
             running_flag: Arc::default(),
         })
@@ -61,22 +73,38 @@ impl SerialService {
                 if !running.load(Ordering::Relaxed) {
                     break 'loops;
                 }
+                // membaca data sampai dengan menemui Delimiter '\n',
+                // dan menyimpannya pada `buffer`
                 match serial_port.read_until(SerialData::DELIM, &mut buffer).await {
+                    // jika tidak ada yang terbaca ( byte yang terbaca 0 ), ulang kembali loop
                     Ok(0) => continue,
+                    // jika terbaca dan diakhiri delimiter, proses data tersebut
                     Ok(len) if buffer[last + len - 1] == SerialData::DELIM => {
+                        // memproses data dan menkonversi byte data tersebut ke tipe data 'SerialData'
+                        // dan mengirimnya melalui mpsc channel
                         if let Some(data) = SerialData::from_bytes(&buffer[..len - 1]) {
                             ignore_err!(tx.send(AsyncMsg::OnSerialData(data)))
                         }
+                        // menghapus buffer, untuk menyiapkan data pada iterasi selanjutnya
+                        // yang akan diterima
                         buffer.clear();
                         last = 0;
                     }
+                    // jika tidak diakhiri delimiter, tambah jumlah 'last' variable dengan jumlah
+                    // byte yang terbaca
                     Ok(len) => last += len,
+                    // jika error
                     Err(err) => {
-                        if matches!(err.kind(), IOEK::UnexpectedEof | IOEK::TimedOut) {
+                        if matches!(
+                            err.kind(),
+                            IOEK::UnexpectedEof
+                                | IOEK::TimedOut
+                                | IOEK::BrokenPipe
+                                | IOEK::Interrupted
+                        ) {
                             continue 'loops;
                         }
-                        ignore_err!(tx.send(AsyncMsg::error(err)));
-                        running.store(false, Ordering::Relaxed);
+                        dyno_core::log::error!("{err}");
                     }
                 }
             }

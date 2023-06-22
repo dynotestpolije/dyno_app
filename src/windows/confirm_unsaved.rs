@@ -6,10 +6,12 @@ use eframe::egui::{
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(crate = "serde")]
-pub struct ConfirmUnsavedWindow;
+pub struct ConfirmUnsavedWindow {
+    open: bool,
+}
 impl ConfirmUnsavedWindow {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 }
 impl super::WindowState for ConfirmUnsavedWindow {
@@ -19,21 +21,19 @@ impl super::WindowState for ConfirmUnsavedWindow {
         _control: &mut crate::control::DynoControl,
         state: &mut crate::state::DynoState,
     ) {
-        if state.show_buffer_unsaved() {
-            let painter = ctx.layer_painter(LayerId::new(
-                Order::Background,
-                Id::new("confirmation_popup_unsaved"),
-            ));
-            painter.rect_filled(
-                ctx.input(|inp| inp.screen_rect()),
-                0.0,
-                Color32::from_black_alpha(192),
-            );
-        }
+        let painter = ctx.layer_painter(LayerId::new(
+            Order::Background,
+            Id::new("confirmation_popup_unsaved"),
+        ));
+        painter.rect_filled(
+            ctx.input(|inp| inp.screen_rect()),
+            0.0,
+            Color32::from_black_alpha(192),
+        );
 
         match Window::new("Buffer Data Records is unsaved. Do you want to save it?")
             .anchor(Align2::CENTER_CENTER, Vec2::new(0.0, 0.0))
-            .open(state.show_buffer_unsaved_mut())
+            .open(&mut self.open)
             .collapsible(false)
             .resizable(false)
             .show(ctx, |ui| {
@@ -59,23 +59,34 @@ impl super::WindowState for ConfirmUnsavedWindow {
                 inner: Some(Some(ButtonKind::Save)),
                 ..
             }) => {
+                self.open = !self.open;
                 state.set_operator(crate::state::OperatorData::save_default());
-                state.set_show_buffer_unsaved(false);
-                state.set_show_quitable(true);
             }
             Some(InnerResponse {
                 inner: Some(Some(ButtonKind::No)),
                 ..
             }) => {
+                self.open = !self.open;
                 state.set_operator(crate::state::OperatorData::Noop);
-                state.set_show_buffer_unsaved(false);
-                state.set_show_quitable(true);
+                if state.quitable() {
+                    state.set_quit(true);
+                }
             }
             Some(InnerResponse {
                 inner: Some(Some(ButtonKind::Cancel)),
                 ..
-            }) => state.set_show_buffer_unsaved(false),
+            }) => self.open = !self.open,
             _ => {}
         }
+    }
+
+    #[inline]
+    fn set_open(&mut self, open: bool) {
+        self.open = open;
+    }
+
+    #[inline]
+    fn is_open(&self) -> bool {
+        self.open
     }
 }

@@ -1,11 +1,14 @@
 use dyno_core::serde;
+use eframe::egui::Window;
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(crate = "serde")]
-pub struct HelpWindow;
+pub struct HelpWindow {
+    open: bool,
+}
 impl HelpWindow {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 }
 
@@ -13,13 +16,26 @@ impl HelpWindow {
 impl super::WindowState for HelpWindow {
     fn show_window(
         &mut self,
-        _ctx: &eframe::egui::Context,
+        ctx: &eframe::egui::Context,
         _control: &mut crate::control::DynoControl,
-        state: &mut crate::state::DynoState,
+        _state: &mut crate::state::DynoState,
     ) {
-        if !state.show_help() {
-            return;
-        }
-        todo!("implement `show_help` window")
+        Window::new("Help")
+            .open(&mut self.open)
+            .resizable(false)
+            .collapsible(false)
+            .show(ctx, |ui: &mut eframe::egui::Ui| {
+                ui.heading("Upcoming Update! Help Window")
+            });
+    }
+
+    #[inline]
+    fn set_open(&mut self, open: bool) {
+        self.open = open;
+    }
+
+    #[inline]
+    fn is_open(&self) -> bool {
+        self.open
     }
 }

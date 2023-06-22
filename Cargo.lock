@@ -948,8 +948,10 @@ name = "dynotest_app"
 version = "0.0.1"
 dependencies = [
  "directories",
+ "downcast-rs",
  "dyno_core",
  "eframe",
+ "egui_extras",
  "futures",
  "image",
  "itertools",
@@ -1022,6 +1024,14 @@ dependencies = [
  "smithay-clipboard",
  "webbrowser",
  "winit",
+]
+
+[[package]]
+name = "egui_extras"
+version = "0.21.0"
+dependencies = [
+ "egui",
+ "serde",
 ]
 
 [[package]]

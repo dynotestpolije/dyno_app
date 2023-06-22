@@ -1,9 +1,10 @@
 [Desktop Entry]
-Type=Application
-Name=DynotestApp
-GenericName=Dynotests App for Dynotest Polije
+Version=1.0
+Name=Dynotest Application Polije
+GenericName=Dynotest Application
+GenericName[id]=Aplikasi Dynotest
 Comment=graphical software Dynotests for Dynotest Polije
-Path=/opt/dynotest_app
+Type=Application
 Exec=dynotest_app
 Icon=dynotest_app
 Terminal=false

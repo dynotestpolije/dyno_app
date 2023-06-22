@@ -6,11 +6,13 @@ use dyno_core::serde;
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(crate = "serde")]
-pub struct AboutWindow;
+pub struct AboutWindow {
+    open: bool,
+}
 
 impl AboutWindow {
     pub fn new() -> Self {
-        Self
+        Self { open: false }
     }
 }
 
@@ -19,7 +21,7 @@ impl super::WindowState for AboutWindow {
         &mut self,
         ctx: &eframe::egui::Context,
         _control: &mut crate::control::DynoControl,
-        state: &mut crate::state::DynoState,
+        _state: &mut crate::state::DynoState,
     ) {
         let uidraw_collapsing = |ui: &mut eframe::egui::Ui| {
             ui.horizontal(|ui| {
@@ -71,7 +73,7 @@ impl super::WindowState for AboutWindow {
         };
 
         Window::new("About")
-            .open(state.show_about_mut())
+            .open(&mut self.open)
             .resizable(false)
             .collapsible(false)
             .show(ctx, |ui: &mut eframe::egui::Ui| {
@@ -98,5 +100,14 @@ impl super::WindowState for AboutWindow {
 
                 ui.collapsing("Authors", uidraw_collapsing);
             });
+    }
+
+    #[inline]
+    fn set_open(&mut self, open: bool) {
+        self.open = open
+    }
+    #[inline]
+    fn is_open(&self) -> bool {
+        self.open
     }
 }
