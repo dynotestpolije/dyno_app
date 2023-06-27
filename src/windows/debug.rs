@@ -91,10 +91,7 @@ impl super::WindowState for DebugAction {
             });
 
         if *start && ((ctx_time as u64 * 1000) % 250) == 0 {
-            let rpm = control
-                .config
-                .filter_rpm_engine
-                .next(RotationPerMinute::new(*rpm));
+            let rpm = RotationPerMinute::new(*rpm);
             let data = Data {
                 speed: KilometresPerHour::new(speed_filter.next(*speed)),
                 rpm_roda: rpm,

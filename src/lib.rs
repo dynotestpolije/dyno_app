@@ -70,6 +70,7 @@ pub enum AsyncMsg {
     OnApiRegister,
     OnApiLoadDyno(Vec<dyno_core::dynotests::DynoTest>),
     OnOpenBuffer(Box<dyno_core::BufferData>),
+    Noop,
 }
 
 impl AsyncMsg {

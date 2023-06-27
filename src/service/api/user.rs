@@ -1,7 +1,7 @@
 use crate::AsyncMsg;
 use dyno_core::{
     crypto::TokenDetails,
-    reqwest::{Client, IntoUrl, Response},
+    reqwest::{Client, IntoUrl},
     users::{UserLogin, UserRegistration},
     ApiResponse,
 };
@@ -11,15 +11,17 @@ pub async fn user_login(
     client: Client,
     login: UserLogin,
 ) -> Result<ApiResponse<TokenDetails>, AsyncMsg> {
-    match client
+    let resp = client
         .post(url)
         .json(&login)
         .send()
         .await
-        .and_then(Response::error_for_status)
-        .map_err(AsyncMsg::error)
-    {
-        Ok(resp) => resp
+        .map(|resp| (resp.status().is_success(), resp))
+        .map_err(AsyncMsg::error);
+
+    match resp {
+        Ok((false, resp)) => Err(AsyncMsg::error(resp.text().await.unwrap_or("".to_owned()))),
+        Ok((true, resp)) => resp
             .json::<ApiResponse<TokenDetails>>()
             .await
             .map_err(AsyncMsg::error),
@@ -32,15 +34,17 @@ pub async fn user_register(
     client: Client,
     register: UserRegistration,
 ) -> Result<ApiResponse<i32>, AsyncMsg> {
-    match client
+    let resp = client
         .post(url)
         .json(&register)
         .send()
         .await
-        .and_then(Response::error_for_status)
-        .map_err(AsyncMsg::error)
-    {
-        Ok(resp) => resp
+        .map(|resp| (resp.status().is_success(), resp))
+        .map_err(AsyncMsg::error);
+
+    match resp {
+        Ok((false, resp)) => Err(AsyncMsg::error(resp.text().await.unwrap_or("".to_owned()))),
+        Ok((true, resp)) => resp
             .json::<ApiResponse<i32>>()
             .await
             .map_err(AsyncMsg::error),
@@ -58,10 +62,11 @@ pub async fn user_logout(
         .bearer_auth(token)
         .send()
         .await
-        .and_then(Response::error_for_status)
+        .map(|resp| (resp.status().is_success(), resp))
         .map_err(AsyncMsg::error)
     {
-        Ok(_resp) => Ok(AsyncMsg::message("Logout is Success!")),
+        Ok((true, _resp)) => Ok(AsyncMsg::message("Logout is Success!")),
+        Ok((false, resp)) => Err(AsyncMsg::error(resp.text().await.unwrap_or("".to_owned()))),
         Err(err) => Err(err),
     }
 }

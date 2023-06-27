@@ -104,14 +104,14 @@ impl super::WindowState for OpenServerWindow {
                         });
                         row.col(|ui| {
                             let open_btn = ui.small_open_button();
-                            match (open_btn.clicked(), control.api()) {
+                            match (open_btn.clicked(), control.service.api()) {
                                 (true, None) => {
                                     toast_error!("Something Wrong, Api is not Connected! trying to reconnecting..");
-                                    control.reconnect_api();
+                                    control.service.reconnect_api(&control.config);
                                 }
                                 (true, Some(api)) => {
                                     control.set_loading();
-                                    api.load_dyno_file(data_url.clone(), data_checksum.clone(), control.tx().clone());
+                                    api.load_dyno_file(data_url.clone(), data_checksum.clone(), control.service.tx());
                                 }
                                 _ => {}
                             }
@@ -128,11 +128,11 @@ impl super::WindowState for OpenServerWindow {
             );
             ui.add_space(20.);
             if refresh_btn.clicked() {
-                match control.api() {
-                    Some(api) => api.get_dyno(control.tx().clone()),
+                match control.service.api() {
+                    Some(api) => api.get_dyno(control.service.tx()),
                     None => {
                         toast_warn!("Not connected to API, trying to reconnecting..");
-                        control.reconnect_api();
+                        control.service.reconnect_api(&control.config);
                     }
                 }
             }

@@ -44,13 +44,13 @@ impl super::WindowState for SaveServerWindow {
             );
 
             if submit_btn.clicked() {
-                match control.api() {
+                match control.service.api() {
                     Some(api) => {
                         let buffer = control.buffer().clone();
                         let config = control.config.clone();
                         let start = control.start.unwrap_or_default();
                         let stop = control.stop.unwrap_or_default();
-                        api.save_dyno(buffer, config, start, stop, control.tx().clone());
+                        api.save_dyno(buffer, config, start, stop, control.service.tx());
                     }
                     None => {
                         toast_warn!("Not connected to API, try reconnecting or check the internet connection.")

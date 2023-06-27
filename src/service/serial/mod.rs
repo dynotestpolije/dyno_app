@@ -53,7 +53,7 @@ impl SerialService {
         })
     }
 
-    pub fn start(&mut self, tx: Sender<AsyncMsg>) -> DynoResult<JoinHandle<()>> {
+    pub fn start(&self, tx: Sender<AsyncMsg>) -> DynoResult<JoinHandle<()>> {
         if self.running_flag.load(Ordering::Relaxed) {
             return Err(DynoErr::service_error("Serial Service Already Running"));
         }

@@ -250,10 +250,7 @@ impl ApiService {
                 .part("data", file_part)
                 .part("info", info_part);
 
-            match dyno::save(url, client, token, multiparts).await {
-                Ok(ok) => ignore_err!(tx.send(ok)),
-                Err(err) => ignore_err!(tx.send(err)),
-            }
+            ignore_err!(tx.send(dyno::save(url, client, token, multiparts).await))
         });
     }
 
@@ -270,8 +267,7 @@ impl ApiService {
         let client = self.client.clone();
         let url = self.api_url("/dyno?all=true");
         tokio::spawn(async move {
-            let result = dyno::get(url, client, token).await;
-            ignore_err!(tx.send(result));
+            ignore_err!(tx.send(dyno::get(url, client, token).await));
         });
     }
 
@@ -288,8 +284,7 @@ impl ApiService {
         let client = self.client.clone();
         let url = self.data_url(url);
         tokio::spawn(async move {
-            let result = dyno::load_file(url, client, token, checksum).await;
-            ignore_err!(tx.send(result));
+            ignore_err!(tx.send(dyno::load_file(url, client, token, checksum).await));
         });
     }
 }

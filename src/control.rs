@@ -2,7 +2,7 @@ use crate::{
     config::ApplicationConfig,
     paths::DynoPaths,
     row_label_value,
-    service::{ApiService, PortInfo, SerialService},
+    service::ServiceControl,
     state::{DynoFileType, DynoState, OperatorData},
     toast_error, toast_info, toast_success,
     widgets::{
@@ -14,7 +14,6 @@ use crate::{
 use dyno_core::{
     asyncify,
     chrono::{NaiveDateTime, Utc},
-    crossbeam_channel::{unbounded, Receiver, Sender},
     ignore_err, log, serde, BufferData, CompresedSaver, CsvSaver, Data, DynoConfig, ExcelSaver,
 };
 use eframe::egui::*;
@@ -36,6 +35,10 @@ enum PanelSetting {
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(crate = "serde")]
 pub struct DynoControl {
+    #[serde(skip)]
+    #[serde(default = "ServiceControl::new")]
+    pub service: ServiceControl,
+
     pub paths: DynoPaths,
     pub app_config: ApplicationConfig,
     pub config: DynoConfig,
@@ -44,19 +47,7 @@ pub struct DynoControl {
     #[serde(default)]
     buffer: BufferData,
 
-    #[serde(skip)]
-    #[serde(default = "SerialService::new")]
-    serial: Option<SerialService>,
-
-    #[serde(skip)]
-    #[serde(default = "ApiService::new")]
-    api_service: Option<ApiService>,
-
     plots: RealtimePlot,
-
-    #[serde(skip)]
-    #[serde(default = "unbounded")]
-    async_channels: (Sender<AsyncMsg>, Receiver<AsyncMsg>),
 
     #[serde(skip)]
     start_time: u64,
@@ -79,14 +70,12 @@ pub struct DynoControl {
 impl Default for DynoControl {
     fn default() -> Self {
         Self {
+            service: ServiceControl::new(),
             paths: Default::default(),
             app_config: Default::default(),
             config: Default::default(),
             buffer: Default::default(),
-            serial: Default::default(),
-            api_service: Default::default(),
             plots: Default::default(),
-            async_channels: unbounded(),
             start_time: Default::default(),
             start: Default::default(),
             stop: Default::default(),
@@ -124,32 +113,21 @@ impl DynoControl {
             buffer: BufferData::new(),
             plots: RealtimePlot::new(),
             buffer_saved: true,
-            async_channels: unbounded(),
-            api_service: ApiService::new(),
-            serial: SerialService::new(),
             ..Default::default()
         }
     }
 
     pub fn init(&mut self) {
-        match self.api() {
-            Some(api) => api.set_active(self.config.clone(), self.tx().clone()),
-            None => self.reconnect_api(),
-        }
-        if self.serial.is_none() {
-            self.reconnect_serial();
-        }
+        self.service.init(&self.config)
     }
+
     pub fn deinit(&mut self) {
-        if let Some(api) = self.api() {
-            api.logout(self.tx().clone());
-            api.set_non_active(self.tx().clone());
-        }
+        self.service.deinit();
     }
 
     #[inline(always)]
     pub fn last_buffer(&self) -> Data {
-        self.buffer.last().clone()
+        *self.buffer.last()
     }
 
     #[allow(unused)]
@@ -177,42 +155,6 @@ impl DynoControl {
     }
 
     #[inline]
-    pub fn tx(&self) -> &Sender<AsyncMsg> {
-        &self.async_channels.0
-    }
-    #[inline]
-    pub fn rx(&self) -> &Receiver<AsyncMsg> {
-        &self.async_channels.1
-    }
-
-    #[inline]
-    pub fn api(&self) -> Option<&ApiService> {
-        self.api_service.as_ref()
-    }
-
-    #[inline]
-    pub fn reconnect_api(&mut self) {
-        if let Some(api) = ApiService::new() {
-            toast_success!("SUCCES! connected to Api Endpoint: {}", api.url);
-            api.set_active(self.config.clone(), self.tx().clone());
-            self.api_service = Some(api);
-        }
-    }
-
-    #[inline]
-    pub fn reconnect_serial(&mut self) {
-        if let Some(serial) = SerialService::new() {
-            toast_success!(
-                "SUCCES! connected to Serial: [{}]:[{}-{}]",
-                serial.info.port_name,
-                serial.info.vid,
-                serial.info.pid
-            );
-            self.serial = Some(serial);
-        }
-    }
-
-    #[inline]
     pub fn set_loading(&self) {
         self.loadings.store(true, Ordering::Relaxed);
     }
@@ -225,48 +167,47 @@ impl DynoControl {
 impl DynoControl {
     #[inline]
     pub fn on_pos_render(&mut self, window_stack: &mut WindowStack, state: &mut DynoState) {
-        if let Ok(msg) = self.async_channels.1.try_recv() {
-            match msg {
-                AsyncMsg::OnSerialData(serial_data) => {
-                    self.start_time += serial_data.period as u64;
-                    self.buffer.push_from_serial(&mut self.config, serial_data);
-                    self.buffer_saved = false;
-                }
-                AsyncMsg::OnOpenBuffer(buffer) => {
-                    self.buffer = *buffer;
-                    self.buffer_saved = false;
-                    self.unset_loading();
-                }
-                AsyncMsg::OnError(err) => {
-                    toast_error!("{err}");
-                    self.unset_loading();
-                }
-                AsyncMsg::OnSavedBuffer(()) => {
-                    self.buffer_saved = true;
-                    if state.quitable() {
-                        state.set_quit(true);
-                    }
-                    self.unset_loading();
-                }
-                AsyncMsg::OnCheckHealthApi(s) => {
-                    if s.is_success() {
-                        toast_success!("API Check Health is Success");
-                    }
-                    self.unset_loading();
-                }
-                AsyncMsg::OnMessage(msg) => toast_info!("{msg}"),
-                AsyncMsg::OnApiLoadDyno(data) => {
-                    match window_stack.idx_mut::<OpenServerWindow>(WSIdx::OpenServer) {
-                        Some(window) => window.set_data(data),
-                        None => dyno_core::log::error!("Failed to Downcast winddow stack"),
-                    }
-                    self.unset_loading();
-                }
-                AsyncMsg::OnApiLogin | AsyncMsg::OnApiRegister => {
-                    window_stack.set_swap_open(WSIdx::Auth);
-                    self.unset_loading();
-                }
+        match self.service.msg() {
+            AsyncMsg::OnSerialData(serial_data) => {
+                self.start_time += serial_data.period as u64;
+                self.buffer.push_from_serial(&mut self.config, serial_data);
+                self.buffer_saved = false;
             }
+            AsyncMsg::OnOpenBuffer(buffer) => {
+                self.buffer = *buffer;
+                self.buffer_saved = false;
+                self.unset_loading();
+            }
+            AsyncMsg::OnError(err) => {
+                toast_error!("{err}");
+                self.unset_loading();
+            }
+            AsyncMsg::OnSavedBuffer(()) => {
+                self.buffer_saved = true;
+                if state.quitable() {
+                    state.set_quit(true);
+                }
+                self.unset_loading();
+            }
+            AsyncMsg::OnCheckHealthApi(s) => {
+                if s.is_success() {
+                    toast_success!("API Check Health is Success");
+                }
+                self.unset_loading();
+            }
+            AsyncMsg::OnMessage(msg) => toast_info!("{msg}"),
+            AsyncMsg::OnApiLoadDyno(data) => {
+                match window_stack.idx_mut::<OpenServerWindow>(WSIdx::OpenServer) {
+                    Some(window) => window.set_data(data),
+                    None => dyno_core::log::error!("Failed to Downcast winddow stack"),
+                }
+                self.unset_loading();
+            }
+            AsyncMsg::OnApiLogin | AsyncMsg::OnApiRegister => {
+                window_stack.set_swap_open(WSIdx::Auth);
+                self.unset_loading();
+            }
+            AsyncMsg::Noop => {}
         }
 
         match (state.get_operator(), self.is_buffer_saved()) {
@@ -287,7 +228,7 @@ impl DynoControl {
 
         let buffer = self.buffer.clone();
         let loadings = self.loadings.clone();
-        let tx = self.async_channels.0.clone();
+        let tx = self.service.tx();
 
         let dirpath = tp.path(self.paths.get_data_dir_folder("Saved"));
         tokio::spawn(async move {
@@ -345,7 +286,7 @@ impl DynoControl {
     pub fn on_open(&mut self, tp: DynoFileType) {
         use dyno_core::tokio;
 
-        let tx = self.async_channels.0.clone();
+        let tx = self.service.tx();
         let loadings = self.loadings.clone();
         let dirpath = tp.path(self.paths.get_data_dir_folder("Saved"));
 
@@ -460,11 +401,11 @@ impl DynoControl {
 
         ui.with_layout(Layout::right_to_left(Align::Center), |rtl_ui| {
             eframe::egui::widgets::global_dark_light_mode_switch(rtl_ui);
-            match &self.api_service {
+            match self.service.api() {
                 Some(api) if api.is_logined() => {
                     if rtl_ui.button("Logout").clicked() {
                         log::info!("Logout button clicked");
-                        api.logout(self.tx().clone());
+                        api.logout(self.service.tx());
                     }
                     if rtl_ui.button("Open from Server").clicked() {
                         log::info!("Opening Window Open Project from server...");
@@ -491,7 +432,7 @@ impl DynoControl {
 
     #[inline(always)]
     pub fn bottom_status(&mut self, ui: &mut Ui) {
-        let layout_ui_status = |ltr_ui: &mut Ui| match &mut self.serial {
+        let layout_ui_status = |ltr_ui: &mut Ui| match self.service.serial() {
             Some(serial) => {
                 let serial_open = serial.is_open();
                 let (status, color) = if serial_open {
@@ -499,15 +440,13 @@ impl DynoControl {
                 } else {
                     ("STATUS: Connected", Color32::GREEN)
                 };
-                let PortInfo {
-                    port_name,
-                    vid,
-                    pid,
-                    ..
-                }: &PortInfo = serial.get_info();
+                let info = serial.get_info();
                 Label::new(RichText::new(status).color(color))
                     .ui(ltr_ui)
-                    .on_hover_text(format!("PORT INFO: [{port_name}] ({vid}:{pid})"));
+                    .on_hover_text(format!(
+                        "PORT INFO: [{}] ({}:{})",
+                        info.port_name, info.vid, info.pid
+                    ));
                 ltr_ui.separator();
                 let btn_start = ltr_ui
                     .small_play_button()
@@ -525,7 +464,7 @@ impl DynoControl {
                     serial_open,
                 ) {
                     (true, _, _, false) => {
-                        if let Err(err) = serial.start(self.async_channels.0.clone()) {
+                        if let Err(err) = serial.start(self.service.tx()) {
                             toast_error!("Serial Service Failed to start - {err}")
                         }
                         self.start = Some(Utc::now().naive_utc());
@@ -550,15 +489,7 @@ impl DynoControl {
                         "PORT INFO: [NO PORT DETECTED] (XX:XX), click to try Initialize the port",
                     );
                 if ltr_ui.button("\u{1F50C} Try Reconnect").clicked() {
-                    if let Some(serial) = SerialService::new() {
-                        toast_success!(
-                            "SUCCES! connected to [{}] - [{}:{}]",
-                            serial.info.port_name,
-                            serial.info.vid,
-                            serial.info.pid
-                        );
-                        self.serial = Some(serial);
-                    }
+                    self.service.reconnect_serial();
                 }
             }
         };

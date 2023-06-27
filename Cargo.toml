@@ -22,6 +22,7 @@ serialport   = { version = "4.2.1" }
 url          = { version = "2.3.1" }
 futures      = { version = "0.3"}
 downcast-rs = "1.2.0"
+paho-mqtt = "0.12.1"
 
 [dependencies.rfd]
 version = "0.11"
@@ -29,7 +30,7 @@ default-features = false
 features = ["gtk3"]
 
 [dependencies.itertools]
-version = "0.10.5"
+version = "0.11"
 default-features = false
 features = ["use_std"]
 

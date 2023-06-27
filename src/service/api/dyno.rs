@@ -1,12 +1,11 @@
+use crate::AsyncMsg;
 use dyno_core::{
     asyncify,
     crypto::{checksum_from_bytes, compare_checksums},
     dynotests::{DynoTest, DynoTestDataInfo},
-    reqwest::{multipart, Client, IntoUrl, Response},
+    reqwest::{multipart, Client, IntoUrl},
     ApiResponse, BufferData, CompresedSaver as _, DynoErr, DynoResult,
 };
-
-use crate::AsyncMsg;
 
 #[inline]
 pub(super) async fn get_info_part(config: DynoTestDataInfo) -> DynoResult<multipart::Part> {
@@ -37,45 +36,59 @@ pub async fn save(
     client: Client,
     token: impl std::fmt::Display,
     multiparts: multipart::Form,
-) -> Result<AsyncMsg, AsyncMsg> {
-    match client
+) -> AsyncMsg {
+    let resp = client
         .post(url)
-        .multipart(multiparts)
         .bearer_auth(token)
+        .multipart(multiparts)
         .send()
         .await
-        .and_then(Response::error_for_status)
-        .map_err(AsyncMsg::error)
-    {
-        Ok(resp) => match resp.json::<ApiResponse<i32>>().await {
-            Ok(id) => Ok(AsyncMsg::message(format!(
-                "Save data is Success with id {}",
-                id.payload
-            ))),
-            Err(err) => Err(AsyncMsg::error(err)),
-        },
-        Err(err) => Err(err),
+        .map(|resp| (resp.status().is_success(), resp))
+        .map_err(AsyncMsg::error);
+
+    match resp {
+        Ok((false, resp)) => AsyncMsg::error(resp.text().await.unwrap_or("".to_owned())),
+        Ok((true, resp)) => {
+            if resp.status().is_success() {
+                match resp.json::<ApiResponse<i32>>().await {
+                    Ok(ApiResponse { payload, .. }) => {
+                        AsyncMsg::message(format!("Save data is Success with id {payload}"))
+                    }
+                    Err(err) => AsyncMsg::error(err),
+                }
+            } else {
+                match resp.text().await {
+                    Ok(ok) => AsyncMsg::error(DynoErr::api_error(ok)),
+                    Err(err) => AsyncMsg::error(err),
+                }
+            }
+        }
+        Err(err) => err,
     }
 }
 
 pub async fn get(url: impl IntoUrl, client: Client, token: impl std::fmt::Display) -> AsyncMsg {
-    match client
+    let resp = client
         .get(url)
         .bearer_auth(token)
         .send()
         .await
-        .and_then(Response::error_for_status)
-        .map_err(AsyncMsg::error)
-    {
-        Ok(resp) => match resp
-            .json::<ApiResponse<Vec<DynoTest>>>()
-            .await
-            .map(|x| AsyncMsg::on_load_dyno(x.payload))
-            .map_err(AsyncMsg::error)
-        {
-            Ok(ok) => ok,
-            Err(err) => err,
-        },
+        .map(|resp| (resp.status().is_success(), resp))
+        .map_err(AsyncMsg::error);
+
+    match resp {
+        Ok((false, resp)) => AsyncMsg::error(resp.text().await.unwrap_or("".to_owned())),
+        Ok((true, resp)) => {
+            if resp.status().is_success() {
+                resp.json::<ApiResponse<Vec<DynoTest>>>()
+                    .await
+                    .map_or_else(AsyncMsg::error, |ApiResponse { payload, .. }| {
+                        AsyncMsg::on_load_dyno(payload)
+                    })
+            } else {
+                AsyncMsg::error(resp.text().await.unwrap_or("".to_owned()))
+            }
+        }
         Err(err) => err,
     }
 }
@@ -86,15 +99,17 @@ pub async fn load_file(
     token: impl std::fmt::Display,
     checksum: impl AsRef<[u8]>,
 ) -> AsyncMsg {
-    match client
+    let resp = client
         .get(url)
         .bearer_auth(token)
         .send()
         .await
-        .and_then(Response::error_for_status)
-        .map_err(AsyncMsg::error)
-    {
-        Ok(mut resp) => {
+        .map(|resp| (resp.status().is_success(), resp))
+        .map_err(AsyncMsg::error);
+
+    match resp {
+        Ok((false, resp)) => AsyncMsg::error(resp.text().await.unwrap_or("".to_owned())),
+        Ok((true, mut resp)) => {
             let mut buffer_data = if let Some(lenght) = resp.content_length() {
                 Vec::with_capacity(lenght as _)
             } else {

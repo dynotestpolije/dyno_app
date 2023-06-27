@@ -22,7 +22,7 @@ fn main() {
         })
     });
 
-    let Some(mut serial_service) = service::SerialService::new() else { return };
+    let Some(serial_service) = service::serial::SerialService::new() else { return };
     let (tx, rx) = unbounded();
     let handle = match serial_service.start(tx) {
         Ok(k) => k,

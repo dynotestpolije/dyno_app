@@ -219,15 +219,16 @@ impl super::WindowState for AuthWindow {
 
                     if submit_btn.clicked() {
                         control.set_loading();
-                        match control.api() {
+                        let tx = control.service.tx();
+                        match control.service.api() {
                             Some(api) => match self.section {
-                                AuthSection::Login => api.login(self.login.data.clone(), control.tx().clone()),
-                                AuthSection::Register => api.register(self.register.data.clone(), control.tx().clone()),
+                                AuthSection::Login => api.login(self.login.data.clone(), tx),
+                                AuthSection::Register => api.register(self.register.data.clone(), tx),
                             }
                             None => {
                                 control.unset_loading();
                                 toast_warn!("Aplication not connected Api Server - trying reconnecting.. and try again.");
-                                control.reconnect_api();
+                                control.service.reconnect_api(&control.config);
                             }
                         }
                     }
