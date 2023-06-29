@@ -19,6 +19,11 @@ macro_rules! dyno_paths {
                     &self,
                     file_name: impl AsRef<Path>
                 ) -> PathBuf {
+                    if !self.$fn_name.exists() {
+                        if let Err(err) = std::fs::create_dir_all(&self.$fn_name) {
+                            dyno_core::log::error!("Failed to create directory `{}`: {err}", self.$fn_name.display())
+                        }
+                    }
                     self.$fn_name.join(file_name)
                 }
 
@@ -29,7 +34,13 @@ macro_rules! dyno_paths {
                     &self,
                     folder_name: impl AsRef<Path>
                 ) -> PathBuf {
-                    self.$fn_name.join(folder_name)
+                    let folder = self.$fn_name.join(folder_name);
+                    if !folder.exists() {
+                        if let Err(err) = std::fs::create_dir_all(&folder) {
+                            dyno_core::log::error!("Failed to create directory `{}`: {err}", folder.display())
+                        }
+                    }
+                    folder
                 }
             )*}
         }
@@ -47,6 +58,7 @@ pub struct DynoPaths {
     pub name: String,
     pub project_path: PathBuf,
 
+    pub document_dir: PathBuf,
     // base directories
     pub cache_dir: PathBuf,
     pub config_dir: PathBuf,
@@ -59,6 +71,7 @@ dyno_paths!(
     DynoPaths,
     [
         project_path,
+        document_dir,
         cache_dir,
         config_dir,
         data_dir,
@@ -75,8 +88,9 @@ pub fn file_name_timestamp(extension: &str) -> String {
 impl Default for DynoPaths {
     fn default() -> Self {
         Self {
-            name: "DynotestsApp".to_owned(),
+            name: crate::PACKAGE_INFO.name.to_owned(),
             project_path: PathBuf::from("./DynotestsApp"),
+            document_dir: PathBuf::from("./DynotestsApp/Documents"),
             cache_dir: PathBuf::from("./DynotestsApp/cache"),
             config_dir: PathBuf::from("./DynotestsApp/config"),
             data_dir: PathBuf::from("./DynotestsApp/data"),
@@ -87,32 +101,21 @@ impl Default for DynoPaths {
 }
 
 impl DynoPaths {
-    pub fn new(name: &'static str) -> DynoResult<Self> {
-        match Self::try_get_dirs(name).map(|p| p.into()) {
+    pub fn new() -> Self {
+        DynoPaths::new_with_name(crate::PACKAGE_INFO.name)
+            .map(|p| p.get_config::<Self>("dyno_paths.toml").unwrap_or(p))
+            .unwrap_or_else(|err| {
+                dyno_core::log::error!("{err}");
+                Default::default()
+            })
+    }
+    pub fn new_with_name(name: &'static str) -> DynoResult<Self> {
+        match directories::ProjectDirs::from("com", "PoliteknikNegeriJember", name).map(|p| p.into()) {
             Some(s) => Ok(s),
             None => Err(DynoErr::input_output_error(
                 "Failed initialize Path, no valid home directory path could be retrieved from the operating system",
             )),
         }
-    }
-
-    pub fn check_is_changed(&mut self, other: &Self) {
-        if crate::eq_structs!(self, other -> [
-            name,
-            project_path,
-            cache_dir,
-            config_dir,
-            data_dir,
-            data_local_dir,
-            preference_dir
-        ]) {
-            *self = other.clone();
-        }
-    }
-
-    #[inline(always)]
-    fn try_get_dirs(name: &'static str) -> Option<directories::ProjectDirs> {
-        directories::ProjectDirs::from("com", "PoliteknikNegeriJember", name)
     }
 }
 
@@ -125,9 +128,14 @@ impl From<directories::ProjectDirs> for DynoPaths {
         let data_local_dir = pd.data_local_dir().to_path_buf();
         let preference_dir = pd.preference_dir().to_path_buf();
 
+        let document_dir = directories::UserDirs::new()
+            .and_then(|x| x.document_dir().map(|x| x.to_owned()))
+            .unwrap_or(data_dir.clone());
+
         Self {
-            name: String::from(crate::PACKAGE_INFO.app_name),
+            name: String::from(crate::PACKAGE_INFO.name),
             project_path,
+            document_dir,
             cache_dir,
             config_dir,
             data_dir,
@@ -167,8 +175,9 @@ impl IndexMut<usize> for DynoPaths {
 }
 
 impl DynoPaths {
-    pub const PATHS_NAME: [&str; 6] = [
+    pub const PATHS_NAME: [&str; 7] = [
         r#"PROJECT PATH"#,
+        r#"DOCUMENTS PATH"#,
         r#"CACHE PATH"#,
         r#"CONFIG PATH"#,
         r#"DATA PATH"#,
@@ -198,7 +207,7 @@ impl DynoPaths {
         S: Serialize,
     {
         let file = self.get_config_dir_file(filename);
-        let data = toml::to_string(&config)?;
+        let data = toml::to_string_pretty(&config)?;
         fs::write(file, data.as_bytes()).map_err(From::from)
     }
 
@@ -214,7 +223,7 @@ impl DynoPaths {
                 f = file.display()
             )));
         }
-        D::decompress_from_path(file).map_err(From::from)
+        D::decompress_from_path(file)
     }
 
     #[inline]
@@ -223,13 +232,14 @@ impl DynoPaths {
         S: CompresedSaver,
     {
         let file = self.get_data_dir_file(filename);
-        S::compress_to_path(&config, file).map_err(From::from)
+        S::compress_to_path(&config, file)
     }
 
     #[inline]
-    pub fn as_slice_mut(&mut self) -> [&'_ mut PathBuf; 6] {
+    pub fn as_slice_mut(&mut self) -> [&'_ mut PathBuf; 7] {
         [
             &mut self.project_path,
+            &mut self.document_dir,
             &mut self.cache_dir,
             &mut self.config_dir,
             &mut self.data_dir,

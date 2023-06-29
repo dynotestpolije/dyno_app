@@ -13,10 +13,10 @@ use dyno_core::{
 };
 use eframe::epaint::mutex::Mutex;
 use futures::StreamExt;
-use mqtt::{ConnectOptions, CreateOptions};
+use mqtt::{ConnectOptions, CreateOptions, MQTT_VERSION_3_1_1};
 use paho_mqtt as mqtt;
 
-use crate::{toast_error, AsyncMsg};
+use crate::AsyncMsg;
 
 #[derive(Clone)]
 pub struct MqttService {
@@ -32,7 +32,7 @@ pub struct MqttService {
 impl MqttService {
     pub fn new() -> Option<Self> {
         let broker = std::env::var("DYNO_MQTT_BROKER").unwrap_or_else(|err| {
-            toast_error!(
+            dyno_core::log::error!(
                 "Failed to Get DYNO_MQTT_BROKER from EnvVar, defaulting to [broker.hivemq.com:1883] - {err}"
             );
             "ws://broker.hivemq.com:1883".to_owned()
@@ -40,6 +40,7 @@ impl MqttService {
 
         let client = match mqtt::CreateOptionsBuilder::new_v3()
             .server_uri(broker)
+            .mqtt_version(MQTT_VERSION_3_1_1)
             .client_id(concat!(
                 env!("CARGO_PKG_NAME"),
                 "_",
@@ -49,7 +50,7 @@ impl MqttService {
         {
             Ok(ok) => Some(ok),
             Err(err) => {
-                toast_error!("Failed to create MQTT Client - {err}");
+                dyno_core::log::error!("Failed to create MQTT Client - {err}");
                 None
             }
         }?;
@@ -120,13 +121,14 @@ impl MqttService {
         let future_fn = async move {
             // Get message stream before connecting.
             let mut strm = client.get_stream(25);
-            // Define the set of options for the connection
-            let lwt = mqtt::Message::new("will", "desktop", mqtt::QOS_2);
             // Create the connect options, explicitly requesting MQTT v3.x
             let conn_opts = mqtt::ConnectOptionsBuilder::new_v3()
                 .keep_alive_interval(std::time::Duration::from_secs(120))
+                .user_name(data.mqtt_user.clone())
+                .password(data.mqtt_pswd.clone())
                 .clean_session(true)
-                .will_message(lwt)
+                // Define the set of options for the connection
+                .will_message(mqtt::Message::new("will", "desktop", mqtt::QOS_2))
                 .finalize();
 
             if let Err(err) = client.connect(conn_opts).await {

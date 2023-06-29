@@ -8,6 +8,8 @@ pub mod open_server;
 pub mod save_server;
 pub mod setting;
 
+pub use setting::PanelSetting;
+
 #[cfg(debug_assertions)]
 pub mod debug;
 
@@ -89,17 +91,14 @@ impl WindowStack {
     pub fn get_mut(&mut self) -> &mut [Box<dyn WindowState>; WS_SIZE] {
         &mut self.stack
     }
-
     #[inline]
     pub fn idx<T: WindowState + 'static>(&self, idx: WSIdx) -> Option<&T> {
         self.stack[idx as usize].downcast_ref::<T>()
     }
-
     #[inline]
     pub fn idx_mut<T: WindowState + 'static>(&mut self, idx: WSIdx) -> Option<&mut T> {
         self.stack[idx as usize].downcast_mut::<T>()
     }
-
     #[inline]
     pub fn set_open(&mut self, idx: WSIdx, open: bool) {
         self.stack[idx as usize].set_open(open)

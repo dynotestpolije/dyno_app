@@ -22,7 +22,7 @@ use dyno_core::{
 };
 use eframe::epaint::mutex::Mutex;
 
-use crate::{toast_error, AsyncMsg};
+use crate::AsyncMsg;
 
 static APP_USER_AGENT: &str = concat!("Dyno/Desktop-", env!("CARGO_PKG_VERSION"),);
 
@@ -38,7 +38,7 @@ impl ApiService {
     pub fn new() -> Option<Self> {
         let url = std::env::var("DYNO_SERVER_URL").unwrap_or_else(|err| {
             dyno_core::log::error!(
-                "Failed to Get DYNO_SERVER_URL from EnvVar, defaulting to [localhost:8000] - {err}"
+                "Failed to Get DYNO_SERVER_URL from EnvVar, defaulting to [localhost:3000] - {err}"
             );
             "http://127.0.0.1:3000".to_owned()
         });
@@ -54,7 +54,7 @@ impl ApiService {
         {
             Ok(ok) => ok,
             Err(err) => {
-                toast_error!("Failed to create Api Client - {err}");
+                dyno_core::log::error!("Failed to create Api Client - {err}");
                 return None;
             }
         };

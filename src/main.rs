@@ -1,56 +1,51 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use dyno_core::{ignore_err, serde, tokio};
+use dyno_core::{ignore_err, log, serde, tokio};
 use dynotest_app::{
-    control::DynoControl, init_logger, msg_dialog_err, state::DynoState, windows::WindowStack,
-    PanelId, APP_KEY, PACKAGE_INFO, TOAST_MSG,
+    config::ApplicationConfig, control::DynoControl, init_logger, msg_dialog_err, paths::DynoPaths,
+    state::DynoState, widgets::RealtimePlot, windows::WindowStack, PanelId, APP_KEY, PACKAGE_INFO,
+    TOAST_MSG,
 };
 use eframe::egui::*;
 
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Default, serde::Deserialize, serde::Serialize)]
 #[serde(crate = "serde")]
 #[serde(default)]
 pub struct Applications {
-    control: DynoControl,
-
     #[serde(skip)]
+    #[serde(default = "DynoControl::new")]
+    control: DynoControl,
+    #[serde(skip)]
+    #[serde(default = "WindowStack::new")]
     window_stack: WindowStack,
 
+    plots: RealtimePlot,
     state: DynoState,
-}
-
-impl Default for Applications {
-    fn default() -> Self {
-        Self {
-            window_stack: WindowStack::new(),
-            control: DynoControl::new(),
-            state: DynoState::new(),
-        }
-    }
 }
 
 impl Applications {
     #[allow(clippy::new_ret_no_self)]
-    pub fn run(control: DynoControl) {
-        let log_dir = control.paths.get_cache_dir_file("logs/log.log");
-        ignore_err!(init_logger(log_dir));
-        let opt = control.app_config.app_options.main_window_opt();
+    pub fn run(paths: DynoPaths) {
+        let opt = paths
+            .get_config::<ApplicationConfig>("app_config.toml")
+            .unwrap_or_else(|err| {
+                dyno_core::log::error!("{err}");
+                Default::default()
+            });
         let app_creator: eframe::AppCreator = Box::new(|cc| {
+            log::debug!("IntegrationInfo: {:?}", cc.integration_info);
             Box::new(
                 cc.storage
                     .and_then(|s| eframe::get_value::<Self>(s, APP_KEY).map(Self::init))
-                    .unwrap_or_else(|| {
-                        Self {
-                            window_stack: WindowStack::new(),
-                            control,
-                            ..Default::default()
-                        }
-                        .init()
-                    }),
+                    .unwrap_or_else(|| Applications::default().init()),
             )
         });
 
-        if let Err(err) = eframe::run_native(PACKAGE_INFO.app_name, opt, app_creator) {
+        if let Err(err) = eframe::run_native(
+            PACKAGE_INFO.app_name,
+            opt.app_options.main_window_opt(),
+            app_creator,
+        ) {
             dyno_core::log::error!("Failed to run app eframe in native - {err}");
             if !msg_dialog_err!(
                 OkReport => ["Ignore the Error and close the Application", "Report the error to Developer"],
@@ -89,7 +84,7 @@ impl Applications {
         TopBottomPanel::bottom(PanelId::Bottom)
             .max_height(height * 0.05)
             .show_animated(ctx, self.state.show_bottom_panel(), |ui| {
-                self.control.bottom_status(ui)
+                self.control.bottom_status(ui, &mut self.window_stack)
             });
 
         SidePanel::left(PanelId::Left)
@@ -98,7 +93,11 @@ impl Applications {
             .show_animated(ctx, self.state.show_left_panel(), |ui| {
                 self.control.left_panel(ui)
             });
-        CentralPanel::default().show(ctx, |ui| self.control.right_panel(ui));
+        CentralPanel::default().show(ctx, |ui| {
+            self.control.right_panel(ui);
+            ui.separator();
+            self.plots.ui(ui, &self.control.buffer);
+        });
     }
 }
 
@@ -149,6 +148,7 @@ impl eframe::App for Applications {
     }
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        self.control.on_save_config();
         eframe::set_value(storage, APP_KEY, self);
     }
 
@@ -172,6 +172,8 @@ fn main() {
         })
     });
 
-    let control = DynoControl::new();
-    Applications::run(control)
+    let paths = DynoPaths::new();
+    let log_dir = paths.get_cache_dir_file("logs/log.log");
+    ignore_err!(init_logger(log_dir));
+    Applications::run(paths)
 }

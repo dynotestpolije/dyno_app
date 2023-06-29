@@ -33,15 +33,11 @@ impl SerialService {
 
     pub fn new() -> Option<Self> {
         let info = match ports::get_dyno_port() {
-            Ok(ok) => match ok {
-                Some(some) => some,
-                None => {
-                    toast_error!(
-                        "Failed to get port info, there is no port available in this machine"
-                    );
-                    return None;
-                }
-            },
+            Ok(Some(some)) => some,
+            Ok(None) => {
+                toast_error!("Failed to get port info, there is no port available in this machine");
+                return None;
+            }
             Err(err) => {
                 toast_error!("Failed to get port info, {err}");
                 return None;

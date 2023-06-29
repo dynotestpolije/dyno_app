@@ -5,16 +5,13 @@ use crate::{
     service::ServiceControl,
     state::{DynoFileType, DynoState, OperatorData},
     toast_error, toast_info, toast_success,
-    widgets::{
-        button::ButtonExt, segment_display::SegmentedDisplay, DynoFileManager, Gauge, RealtimePlot,
-    },
-    windows::{open_server::OpenServerWindow, WSIdx, WindowStack},
+    widgets::{button::ButtonExt, segment_display::SegmentedDisplay, DynoFileManager, Gauge},
+    windows::{open_server::OpenServerWindow, setting::SettingWindow, WSIdx, WindowStack},
     AsyncMsg,
 };
 use dyno_core::{
-    asyncify,
-    chrono::{NaiveDateTime, Utc},
-    ignore_err, log, serde, BufferData, CompresedSaver, CsvSaver, Data, DynoConfig, ExcelSaver,
+    asyncify, chrono::Local, ignore_err, log, serde, BufferData, CompresedSaver, CsvSaver, Data,
+    DynoConfig, ExcelSaver,
 };
 use eframe::egui::*;
 use std::sync::{
@@ -32,66 +29,19 @@ enum PanelSetting {
     Style,
 }
 
-#[derive(serde::Deserialize, serde::Serialize)]
-#[serde(crate = "serde")]
 pub struct DynoControl {
-    #[serde(skip)]
-    #[serde(default = "ServiceControl::new")]
     pub service: ServiceControl,
-
     pub paths: DynoPaths,
-    pub app_config: ApplicationConfig,
     pub config: DynoConfig,
-
-    #[serde(skip)]
-    #[serde(default)]
-    buffer: BufferData,
-
-    plots: RealtimePlot,
-
-    #[serde(skip)]
-    start_time: u64,
-
-    #[serde(skip)]
-    pub start: Option<NaiveDateTime>,
-
-    #[serde(skip)]
-    pub stop: Option<NaiveDateTime>,
-
-    #[serde(skip)]
-    #[serde(default)]
-    loadings: Arc<AtomicBool>,
-
-    #[serde(skip)]
-    #[serde(default)]
-    buffer_saved: bool,
+    pub app_config: ApplicationConfig,
+    pub buffer: BufferData,
+    pub loadings: Arc<AtomicBool>,
+    pub buffer_saved: bool,
 }
 
 impl Default for DynoControl {
     fn default() -> Self {
-        Self {
-            service: ServiceControl::new(),
-            paths: Default::default(),
-            app_config: Default::default(),
-            config: Default::default(),
-            buffer: Default::default(),
-            plots: Default::default(),
-            start_time: Default::default(),
-            start: Default::default(),
-            stop: Default::default(),
-            loadings: Default::default(),
-            buffer_saved: Default::default(),
-        }
-    }
-}
-
-impl DynoControl {
-    pub fn new() -> Self {
-        let paths = DynoPaths::new(crate::PACKAGE_INFO.app_name).unwrap_or_else(|err| {
-            dyno_core::log::error!("{err}");
-            Default::default()
-        });
-
+        let paths = DynoPaths::new();
         let app_config = paths
             .get_config::<ApplicationConfig>("app_config.toml")
             .unwrap_or_else(|err| {
@@ -107,46 +57,42 @@ impl DynoControl {
             });
 
         Self {
+            paths,
             app_config,
             config,
-            paths,
+            service: ServiceControl::new(),
             buffer: BufferData::new(),
-            plots: RealtimePlot::new(),
-            buffer_saved: true,
-            ..Default::default()
+            loadings: Arc::new(AtomicBool::new(false)),
+            buffer_saved: false,
         }
+    }
+}
+
+impl DynoControl {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn on_save_config(&self) {
+        self.paths
+            .set_config(&self.config, "config.toml")
+            .unwrap_or_else(|err| {
+                dyno_core::log::error!("Failed Save `config.toml` file ({err})");
+            });
+        self.paths
+            .set_config(&self.app_config, "app_config.toml")
+            .unwrap_or_else(|err| {
+                dyno_core::log::error!("Failed Save `app_config.toml` file ({err})");
+            });
     }
 
     pub fn init(&mut self) {
+        self.config.init();
         self.service.init(&self.config)
     }
 
     pub fn deinit(&mut self) {
         self.service.deinit();
-    }
-
-    #[inline(always)]
-    pub fn last_buffer(&self) -> Data {
-        *self.buffer.last()
-    }
-
-    #[allow(unused)]
-    #[inline(always)]
-    pub fn buffer(&self) -> &'_ BufferData {
-        &self.buffer
-    }
-
-    #[inline(always)]
-    pub fn buffer_mut(&mut self) -> &'_ mut BufferData {
-        &mut self.buffer
-    }
-
-    #[inline]
-    pub fn start_time(&self) -> String {
-        let seconds = (self.start_time / 1000) % 60;
-        let minutes = (self.start_time / (1000 * 60)) % 60;
-        let hours = (self.start_time / (1000 * 60 * 60)) % 24;
-        format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
     }
 
     // mark return saved if buffer is already saved or buffer is empty
@@ -169,7 +115,6 @@ impl DynoControl {
     pub fn on_pos_render(&mut self, window_stack: &mut WindowStack, state: &mut DynoState) {
         match self.service.msg() {
             AsyncMsg::OnSerialData(serial_data) => {
-                self.start_time += serial_data.period as u64;
                 self.buffer.push_from_serial(&mut self.config, serial_data);
                 self.buffer_saved = false;
             }
@@ -213,7 +158,7 @@ impl DynoControl {
         match (state.get_operator(), self.is_buffer_saved()) {
             // if buffer is saved and operator want to save, do save the buffer, or if buffer
             // already saved, ignore the operator
-            (OperatorData::SaveFile(tp), false) => self.on_save(tp),
+            (OperatorData::SaveFile(tp), _) => self.on_save(tp),
             // if buffer is saved and operator want to open file, do open the file to buffer,
             // or is buffer unsaved but operator want ot open file, show popup to save buffer first
             (OperatorData::OpenFile(tp), true) => self.on_open(tp),
@@ -230,13 +175,18 @@ impl DynoControl {
         let loadings = self.loadings.clone();
         let tx = self.service.tx();
 
-        let dirpath = tp.path(self.paths.get_data_dir_folder("Saved"));
+        let dirpath = tp.path(self.paths.get_document_dir_folder("Saved"));
+        if !dirpath.exists() {
+            if let Err(err) = std::fs::create_dir_all(&dirpath) {
+                log::error!("{err}");
+            }
+        }
         tokio::spawn(async move {
             loadings.store(true, Ordering::Relaxed);
             match tp {
                 DynoFileType::Dyno => {
                     match DynoFileManager::save_binaries_async(
-                        format!("dynotest_{}.dyno", Utc::now().timestamp()),
+                        format!("dynotest_{}.dyno", Local::now().timestamp()),
                         dirpath,
                     )
                     .await
@@ -251,7 +201,7 @@ impl DynoControl {
                 }
                 DynoFileType::Csv => {
                     match DynoFileManager::save_csv_async(
-                        format!("dynotest_{}.csv", Utc::now().timestamp()),
+                        format!("dynotest_{}.csv", Local::now().timestamp()),
                         dirpath,
                     )
                     .await
@@ -266,7 +216,7 @@ impl DynoControl {
                     }
                 }
                 DynoFileType::Excel => match DynoFileManager::save_excel_async(
-                    format!("dynotest_{}.xlsx", Utc::now().timestamp()),
+                    format!("dynotest_{}.xlsx", Local::now().timestamp()),
                     dirpath,
                 )
                 .await
@@ -288,8 +238,12 @@ impl DynoControl {
 
         let tx = self.service.tx();
         let loadings = self.loadings.clone();
-        let dirpath = tp.path(self.paths.get_data_dir_folder("Saved"));
-
+        let dirpath = tp.path(self.paths.get_document_dir_folder("Saved"));
+        if !dirpath.exists() {
+            if let Err(err) = std::fs::create_dir_all(&dirpath) {
+                log::error!("{err}");
+            }
+        }
         tokio::spawn(async move {
             loadings.store(true, Ordering::Relaxed);
             match tp {
@@ -415,6 +369,10 @@ impl DynoControl {
                         log::info!("Opening Window Save Project to to server...");
                         window_stack.set_swap_open(WSIdx::SaveServer);
                     }
+                    if rtl_ui.button("Stream to Server").clicked() {
+                        log::info!("Opening Window Save Project to to server...");
+                        window_stack.set_swap_open(WSIdx::SaveServer);
+                    }
                 }
                 _ => {
                     if rtl_ui
@@ -422,7 +380,7 @@ impl DynoControl {
                         .on_hover_text("login first to access server, like saving data to server.")
                         .clicked()
                     {
-                        log::info!("Login bottom clicked");
+                        log::info!("Stream to Server bottom clicked");
                         window_stack.set_swap_open(WSIdx::Auth);
                     }
                 }
@@ -431,7 +389,7 @@ impl DynoControl {
     }
 
     #[inline(always)]
-    pub fn bottom_status(&mut self, ui: &mut Ui) {
+    pub fn bottom_status(&mut self, ui: &mut Ui, window_stack: &mut WindowStack) {
         let layout_ui_status = |ltr_ui: &mut Ui| match self.service.serial() {
             Some(serial) => {
                 let serial_open = serial.is_open();
@@ -463,21 +421,20 @@ impl DynoControl {
                     btn_reset.clicked(),
                     serial_open,
                 ) {
-                    (true, _, _, false) => {
-                        if let Err(err) = serial.start(self.service.tx()) {
-                            toast_error!("Serial Service Failed to start - {err}")
+                    (true, false, false, false) => {
+                        // open window setting on info for configuring info before starting
+                        if let Some(win) = window_stack.idx_mut::<SettingWindow>(WSIdx::Setting) {
+                            win.open_on_panel_info();
                         }
-                        self.start = Some(Utc::now().naive_utc());
                     }
-                    (_, true, _, true) => {
-                        serial.stop();
-                        self.stop = Some(Utc::now().naive_utc());
+                    (false, true, false, true) => {
+                        self.service.stop_serial();
                     }
-                    (_, _, true, true) => {
-                        serial.stop();
+                    (false, false, true, true) => {
+                        self.service.stop_serial();
                         self.buffer.clean();
                     }
-                    (_, _, true, _) => self.buffer.clean(),
+                    (false, false, true, false) => self.buffer.clean(),
                     _ => {}
                 }
             }
@@ -619,7 +576,7 @@ from rotational rounds of the roller in dynotests chasis
             format!("{:7.2}", speed.value()),
             format!("{:7.2}", rpm_engine.value() * 0.001),
             format!("{:7.2}", odo.value()),
-            self.start_time(),
+            self.buffer.time_fmt(),
         ];
         let iter_segmented_ui = |(idx, segment_ui): (usize, &mut Ui)| {
             segment_ui.group(|uigroup_inner| {
@@ -639,8 +596,6 @@ from rotational rounds of the roller in dynotests chasis
                 .enumerate()
                 .for_each(iter_segmented_ui);
         });
-        ui.separator();
-        self.plots.ui(ui, &self.buffer);
     }
 
     #[inline]

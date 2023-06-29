@@ -6,14 +6,20 @@ use api::ApiService;
 use mqtt::MqttService;
 use serial::SerialService;
 
-use crate::AsyncMsg;
-use dyno_core::crossbeam_channel::{Receiver, Sender};
+use crate::{toast_error, AsyncMsg};
+use dyno_core::{
+    chrono::{NaiveDateTime, Utc},
+    crossbeam_channel::{Receiver, Sender},
+};
 
 #[derive(Clone)]
 pub struct ServiceControl {
     pub serial: Option<SerialService>,
     pub api: Option<ApiService>,
     pub mqtt: Option<MqttService>,
+
+    pub serial_time_start: Option<NaiveDateTime>,
+    pub serial_time_stop: Option<NaiveDateTime>,
 
     pub rx: Receiver<AsyncMsg>,
     pub tx: Sender<AsyncMsg>,
@@ -43,6 +49,8 @@ impl ServiceControl {
             serial,
             api,
             mqtt,
+            serial_time_start: None,
+            serial_time_stop: None,
             rx,
             tx,
         }
@@ -68,19 +76,6 @@ impl ServiceControl {
             serial.stop();
         }
     }
-
-    #[inline]
-    pub fn api(&self) -> Option<&ApiService> {
-        self.api.as_ref()
-    }
-    #[inline]
-    pub fn serial(&self) -> Option<&SerialService> {
-        self.serial.as_ref()
-    }
-    #[inline]
-    pub fn mqtt(&self) -> Option<&MqttService> {
-        self.mqtt.as_ref()
-    }
     pub fn rx(&self) -> Receiver<AsyncMsg> {
         self.rx.clone()
     }
@@ -89,11 +84,57 @@ impl ServiceControl {
     }
 
     #[inline]
+    pub fn api(&self) -> Option<&ApiService> {
+        self.api.as_ref()
+    }
+    #[inline]
     pub fn reconnect_api(&mut self, config: &dyno_core::DynoConfig) {
         if let Some(api) = ApiService::new() {
             crate::toast_success!("SUCCES! connected to Api Endpoint: {}", api.url);
             api.set_active(config.clone(), self.tx.clone());
             self.api = Some(api);
+        }
+    }
+
+    #[inline]
+    pub fn mqtt(&self) -> Option<&MqttService> {
+        self.mqtt.as_ref()
+    }
+    #[inline]
+    pub fn reconnect_mqtt(&mut self) {
+        if let Some(mqtt) = MqttService::new() {
+            crate::toast_success!("SUCCES! connected to MQTT Broker",);
+            self.mqtt = Some(mqtt);
+        }
+    }
+}
+
+#[allow(unused)]
+impl ServiceControl {
+    #[inline]
+    pub fn serial(&self) -> Option<&SerialService> {
+        self.serial.as_ref()
+    }
+
+    #[inline]
+    pub fn is_serial_connected(&self) -> bool {
+        self.serial.as_ref().is_some_and(|x| x.is_open())
+    }
+
+    #[inline]
+    pub fn start_serial(&mut self) {
+        if let Some(serial) = &self.serial {
+            if let Err(err) = serial.start(self.tx()) {
+                toast_error!("Serial Service Failed to start - {err}")
+            }
+            self.serial_time_start = Some(Utc::now().naive_utc());
+        }
+    }
+    #[inline]
+    pub fn stop_serial(&mut self) {
+        if let Some(serial) = &self.serial {
+            serial.stop();
+            self.serial_time_stop = Some(Utc::now().naive_utc());
         }
     }
 
@@ -107,14 +148,6 @@ impl ServiceControl {
                 serial.info.pid
             );
             self.serial = Some(serial);
-        }
-    }
-
-    #[inline]
-    pub fn reconnect_mqtt(&mut self) {
-        if let Some(mqtt) = MqttService::new() {
-            crate::toast_success!("SUCCES! connected to MQTT Broker",);
-            self.mqtt = Some(mqtt);
         }
     }
 }

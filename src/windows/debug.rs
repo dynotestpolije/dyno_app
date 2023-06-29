@@ -61,7 +61,7 @@ impl super::WindowState for DebugAction {
 
                         if ui.reset_button().clicked() {
                             crate::log::debug!("Resetting Buffer in debug emulation");
-                            control.buffer_mut().clean();
+                            control.buffer.clean();
                         }
 
                         ui.end_row();
@@ -103,8 +103,7 @@ impl super::WindowState for DebugAction {
                 time_stamp: Utc::now().naive_utc(),
                 ..Default::default()
             };
-            control.buffer_mut().data = data;
-            control.buffer_mut().process_data();
+            control.buffer.push_from_data(&mut control.config, data);
         }
     }
 }

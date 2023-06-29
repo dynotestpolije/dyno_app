@@ -46,10 +46,10 @@ impl super::WindowState for SaveServerWindow {
             if submit_btn.clicked() {
                 match control.service.api() {
                     Some(api) => {
-                        let buffer = control.buffer().clone();
+                        let buffer = control.buffer.clone();
                         let config = control.config.clone();
-                        let start = control.start.unwrap_or_default();
-                        let stop = control.stop.unwrap_or_default();
+                        let start = control.service.serial_time_start.unwrap_or_default();
+                        let stop = control.service.serial_time_stop.unwrap_or_default();
                         api.save_dyno(buffer, config, start, stop, control.service.tx());
                     }
                     None => {
