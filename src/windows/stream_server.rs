@@ -2,19 +2,17 @@ use eframe::egui::{Button, Id, LayerId, RichText, Ui, Window};
 use eframe::emath::Align2;
 use eframe::epaint::{vec2, Color32, Rounding, Vec2};
 
-use crate::toast_warn;
-
 #[derive(Debug, Clone, Default)]
-pub struct SaveServerWindow {
+pub struct StreamServerWindow {
     open: bool,
 }
-impl SaveServerWindow {
+impl StreamServerWindow {
     pub fn new() -> Self {
         Self::default()
     }
 }
 
-impl super::WindowState for SaveServerWindow {
+impl super::WindowState for StreamServerWindow {
     fn show_window(
         &mut self,
         ctx: &eframe::egui::Context,
@@ -38,30 +36,23 @@ impl super::WindowState for SaveServerWindow {
             super::setting::SettingWindow::setting_info(ui, &mut control.config);
             ui.add_space(10.);
             let submit_btn = ui.add(
-                Button::new(RichText::new("Save").color(Color32::BLACK))
+                Button::new(RichText::new("Stream").color(Color32::BLACK))
                     .rounding(Rounding::same(4.))
                     .fill(Color32::LIGHT_BLUE)
                     .min_size(vec2(280., 30.)),
             );
 
             if submit_btn.clicked() {
-                match control.service.api() {
-                    Some(api) => {
-                        open = false;
-                        let buffer = control.buffer.clone();
-                        let config = control.config.clone();
-                        let start = control.service.serial_time_start.unwrap_or_default();
-                        let stop = control.service.serial_time_stop.unwrap_or_default();
-                        api.save_dyno(buffer, config, start, stop);
-                    }
-                    None => {
-                        toast_warn!("Not connected to API, try reconnecting or check the internet connection.")
-                    }
+                open = false;
+                control.service.start_stream();
+                let config = control.config.clone();
+                if let Some(api) = control.service.api() {
+                    api.set_active(config);
                 }
             }
         };
 
-        Window::new("Save DynoTests to Server")
+        Window::new("Stream to Server")
             .id("dyno_save_server".into())
             .anchor(Align2::CENTER_CENTER, Vec2::new(0.0, 0.0))
             .open(&mut self.open)
@@ -69,6 +60,7 @@ impl super::WindowState for SaveServerWindow {
             .collapsible(false)
             .resizable(false)
             .show(ctx, |ui| ui.vertical_centered_justified(ui_window));
+
         if !open {
             self.open = false;
         }

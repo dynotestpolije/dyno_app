@@ -62,7 +62,7 @@ pub fn init_logger(file: impl AsRef<std::path::Path>) -> DynoResult<()> {
 #[derive(Debug, Clone)]
 pub enum AsyncMsg {
     OnSavedBuffer(()),
-    OnCheckHealthApi(dyno_core::reqwest::StatusCode),
+    OnCheckHealthApi(()),
     OnSerialData(dyno_core::SerialData),
     OnMessage(String),
     OnError(DynoErr),
@@ -83,8 +83,8 @@ impl AsyncMsg {
         Self::OnSerialData(inner)
     }
     #[inline]
-    pub const fn check_health(inner: dyno_core::reqwest::StatusCode) -> Self {
-        Self::OnCheckHealthApi(inner)
+    pub const fn check_health() -> Self {
+        Self::OnCheckHealthApi(())
     }
     #[inline]
     pub const fn on_load_dyno(data: Vec<dyno_core::dynotests::DynoTest>) -> Self {

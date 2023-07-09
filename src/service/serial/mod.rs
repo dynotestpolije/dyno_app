@@ -17,13 +17,14 @@ use std::sync::{
     Arc,
 };
 
-use crate::{toast_error, AsyncMsg};
+use crate::AsyncMsg;
 
 use self::impl_serial::open_async;
 
 #[derive(Clone)]
 pub struct SerialService {
     pub info: PortInfo,
+    tx: Sender<AsyncMsg>,
     running_flag: Arc<AtomicBool>,
 }
 
@@ -31,29 +32,34 @@ impl SerialService {
     pub const MAX_BUFFER_SIZE: usize = 1024;
     const BAUD_RATE: u32 = 512_000;
 
-    pub fn new() -> Option<Self> {
+    pub fn new(tx: Sender<AsyncMsg>) -> DynoResult<Self> {
         let info = match ports::get_dyno_port() {
             Ok(Some(some)) => some,
             Ok(None) => {
-                toast_error!("Failed to get port info, there is no port available in this machine");
-                return None;
+                return Err(DynoErr::service_error(
+                    "Failed to get port info, there is no port available in this machine",
+                ));
             }
             Err(err) => {
-                toast_error!("Failed to get port info, {err}");
-                return None;
+                return Err(DynoErr::service_error(format!(
+                    "Failed to get port info, {err}"
+                )));
             }
         };
-        Some(Self {
+        Ok(Self {
+            tx,
             info,
             running_flag: Arc::default(),
         })
     }
 
-    pub fn start(&self, tx: Sender<AsyncMsg>) -> DynoResult<JoinHandle<()>> {
+    pub fn start(&self) -> DynoResult<JoinHandle<()>> {
         if self.running_flag.load(Ordering::Relaxed) {
             return Err(DynoErr::service_error("Serial Service Already Running"));
         }
         self.running_flag.store(true, Ordering::Relaxed);
+
+        let tx = self.tx.clone();
 
         let running = self.running_flag.clone();
         let port_name = self.info.port_name.clone();

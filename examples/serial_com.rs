@@ -22,9 +22,9 @@ fn main() {
         })
     });
 
-    let Some(serial_service) = service::serial::SerialService::new() else { return };
     let (tx, rx) = unbounded();
-    let handle = match serial_service.start(tx) {
+    let Ok(serial_service) = service::serial::SerialService::new(tx) else { return };
+    let handle = match serial_service.start() {
         Ok(k) => k,
         Err(err) => {
             eprintln!("ERROR: Failed to start serial service - {err}");

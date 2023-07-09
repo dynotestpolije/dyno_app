@@ -1,72 +1,76 @@
 use crate::AsyncMsg;
 use dyno_core::{
     crypto::TokenDetails,
-    reqwest::{Client, IntoUrl},
     users::{UserLogin, UserRegistration},
-    ApiResponse,
 };
+use reqwest::{Client, IntoUrl};
 
-pub async fn user_login(
-    url: impl IntoUrl,
+use super::Resp;
+
+pub async fn user_login<U>(
+    url: U,
     client: Client,
     login: UserLogin,
-) -> Result<ApiResponse<TokenDetails>, AsyncMsg> {
+) -> Result<TokenDetails, AsyncMsg>
+where
+    U: IntoUrl,
+{
     let resp = client
         .post(url)
         .json(&login)
         .send()
         .await
-        .map(|resp| (resp.status().is_success(), resp))
-        .map_err(AsyncMsg::error);
+        .map(Resp::from_resp)
+        .map_err(super::map_resp_error);
 
     match resp {
-        Ok((false, resp)) => Err(AsyncMsg::error(resp.text().await.unwrap_or("".to_owned()))),
-        Ok((true, resp)) => resp
-            .json::<ApiResponse<TokenDetails>>()
+        Ok(resp) => resp
+            .get_json::<TokenDetails>()
             .await
             .map_err(AsyncMsg::error),
         Err(err) => Err(err),
     }
 }
 
-pub async fn user_register(
-    url: impl IntoUrl,
-    client: Client,
-    register: UserRegistration,
-) -> Result<ApiResponse<i32>, AsyncMsg> {
+pub async fn user_register<U>(url: U, client: Client, register: UserRegistration) -> AsyncMsg
+where
+    U: IntoUrl,
+{
     let resp = client
         .post(url)
         .json(&register)
         .send()
         .await
-        .map(|resp| (resp.status().is_success(), resp))
-        .map_err(AsyncMsg::error);
+        .map(Resp::from_resp)
+        .map_err(super::map_resp_error);
 
     match resp {
-        Ok((false, resp)) => Err(AsyncMsg::error(resp.text().await.unwrap_or("".to_owned()))),
-        Ok((true, resp)) => resp
-            .json::<ApiResponse<i32>>()
+        Ok(resp) => resp
+            .get_json::<i32>()
             .await
-            .map_err(AsyncMsg::error),
-        Err(err) => Err(err),
+            .map_or_else(AsyncMsg::error, |_| AsyncMsg::OnApiRegister),
+        Err(err) => err,
     }
 }
 
-pub async fn user_logout(
-    url: impl IntoUrl,
+pub async fn user_logout<U>(
+    url: U,
     client: Client,
     token: impl std::fmt::Display,
-) -> Result<AsyncMsg, AsyncMsg> {
+) -> Result<AsyncMsg, AsyncMsg>
+where
+    U: IntoUrl,
+{
     match client
         .get(url)
         .bearer_auth(token)
         .send()
         .await
-        .map(|resp| (resp.status().is_success(), resp))
-        .map_err(AsyncMsg::error)
+        .map(Resp::from_resp)
+        .map_err(super::map_resp_error)
     {
-        Ok((true, _resp)) => Ok(AsyncMsg::message("Logout is Success!")),
-        Ok((false, resp)) => Err(AsyncMsg::error(resp.text().await.unwrap_or("".to_owned()))),
+        Ok(Resp::Success(_)) => Ok(AsyncMsg::message("Logout is Success!")),
+        Ok(Resp::Error(resp)) => Err(AsyncMsg::error(resp.text().await.unwrap_or("".to_owned()))),
         Err(err) => Err(err),
     }
 }

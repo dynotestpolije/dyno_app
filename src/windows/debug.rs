@@ -90,7 +90,7 @@ impl super::WindowState for DebugAction {
                 )
             });
 
-        if *start && ((ctx_time as u64 * 1000) % 250) == 0 {
+        if *start && (((ctx_time as u64).rem_euclid(1) * 1000) % 250) == 0 {
             let rpm = RotationPerMinute::new(*rpm);
             let data = Data {
                 speed: KilometresPerHour::new(speed_filter.next(*speed)),
@@ -103,6 +103,7 @@ impl super::WindowState for DebugAction {
                 time_stamp: Utc::now().naive_utc(),
                 ..Default::default()
             };
+            control.service.send_stream_data(&data);
             control.buffer.push_from_data(&mut control.config, data);
         }
     }

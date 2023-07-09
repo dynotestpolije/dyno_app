@@ -303,7 +303,6 @@ impl Toasts {
     /// Shortcut for adding a toast with info `success`.
     #[inline]
     pub fn success(&mut self, caption: impl ToString + std::fmt::Display) {
-        dyno_core::log::info!("{}", &caption);
         self.add(Toast::success(caption))
     }
 
@@ -311,7 +310,6 @@ impl Toasts {
     #[inline]
     pub fn info(&mut self, caption: impl ToString + std::fmt::Display) {
         let caption = caption.to_string();
-        dyno_core::log::info!("{}", &caption);
         self.add(Toast::info(caption))
     }
 
@@ -319,7 +317,6 @@ impl Toasts {
     #[inline]
     pub fn warning(&mut self, caption: impl ToString + std::fmt::Display) {
         let caption = caption.to_string();
-        dyno_core::log::warn!("{}", &caption);
         self.add(Toast::warning(caption))
     }
 
@@ -327,7 +324,6 @@ impl Toasts {
     #[inline]
     pub fn error(&mut self, caption: impl ToString + std::fmt::Display) {
         let caption = caption.to_string();
-        dyno_core::log::error!("{}", &caption);
         self.add(Toast::error(caption))
     }
 
@@ -605,20 +601,36 @@ fn ease_in_cubic(x: f32) -> f32 {
 
 #[macro_export]
 macro_rules! toast_error {
-    ($($args:tt)*) => { $crate::TOAST_MSG.lock().error(format!($($args)*)) };
+    ($($args:tt)*) => {{
+        let msg = format!($($args)*);
+        $crate::TOAST_MSG.lock().error(&msg);
+        dyno_core::log::error!("{msg}");
+    }};
 }
 
 #[macro_export]
 macro_rules! toast_warn {
-    ($($args:tt)*) => { $crate::TOAST_MSG.lock().warning(format!($($args)*)) };
+    ($($args:tt)*) => {{
+        let msg = format!($($args)*);
+        $crate::TOAST_MSG.lock().warning(&msg);
+        dyno_core::log::warn!("{msg}");
+    }};
 }
 
 #[macro_export]
 macro_rules! toast_info {
-    ($($args:tt)*) => { $crate::TOAST_MSG.lock().info(format!($($args)*)) };
+    ($($args:tt)*) => {{
+        let msg = format!($($args)*);
+        $crate::TOAST_MSG.lock().info(&msg);
+        dyno_core::log::info!("{msg}");
+    }};
 }
 
 #[macro_export]
 macro_rules! toast_success {
-    ($($args:tt)*) => { $crate::TOAST_MSG.lock().success(format!($($args)*)) };
+    ($($args:tt)*) => {{
+        let msg = format!($($args)*);
+        $crate::TOAST_MSG.lock().success(&msg);
+        dyno_core::log::info!("{msg}");
+    }};
 }

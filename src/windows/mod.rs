@@ -7,6 +7,7 @@ pub mod logger;
 pub mod open_server;
 pub mod save_server;
 pub mod setting;
+pub mod stream_server;
 
 pub use setting::PanelSetting;
 
@@ -49,6 +50,7 @@ pub enum WSIdx {
     Logger,
     OpenServer,
     SaveServer,
+    StreamServer,
     Setting,
     WindowStateSize,
 }
@@ -78,6 +80,7 @@ impl WindowStack {
                 Box::new(logger::LoggerWindow::new()),
                 Box::new(open_server::OpenServerWindow::new()),
                 Box::new(save_server::SaveServerWindow::new()),
+                Box::new(stream_server::StreamServerWindow::new()),
                 Box::new(setting::SettingWindow::new()),
             ],
         }

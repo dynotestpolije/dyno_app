@@ -36,8 +36,9 @@ impl Applications {
             log::debug!("IntegrationInfo: {:?}", cc.integration_info);
             Box::new(
                 cc.storage
-                    .and_then(|s| eframe::get_value::<Self>(s, APP_KEY).map(Self::init))
-                    .unwrap_or_else(|| Applications::default().init()),
+                    .and_then(|s| eframe::get_value::<Self>(s, APP_KEY))
+                    .unwrap_or_default()
+                    .init(),
             )
         });
 

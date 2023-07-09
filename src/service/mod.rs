@@ -1,34 +1,33 @@
 pub mod api;
-pub mod mqtt;
 pub mod serial;
+pub mod ws;
 
 use api::ApiService;
-use mqtt::MqttService;
 use serial::SerialService;
 
-use crate::{toast_error, AsyncMsg};
+use crate::{paths::DynoPaths, toast_error, AsyncMsg};
 use dyno_core::{
     chrono::{NaiveDateTime, Utc},
     crossbeam_channel::{Receiver, Sender},
 };
 
+use self::ws::WebSocketService;
+
 #[derive(Clone)]
 pub struct ServiceControl {
+    data: [dyno_core::Data; 15],
     pub serial: Option<SerialService>,
     pub api: Option<ApiService>,
-    pub mqtt: Option<MqttService>,
+    pub websocket: WebSocketService,
 
     pub serial_time_start: Option<NaiveDateTime>,
     pub serial_time_stop: Option<NaiveDateTime>,
 
     pub rx: Receiver<AsyncMsg>,
     pub tx: Sender<AsyncMsg>,
-}
 
-impl Default for ServiceControl {
-    fn default() -> Self {
-        Self::new()
-    }
+    roll: usize,
+    pub stream_data: bool,
 }
 
 impl ServiceControl {
@@ -39,25 +38,36 @@ impl ServiceControl {
 }
 
 impl ServiceControl {
-    pub fn new() -> Self {
+    pub fn new(paths: &DynoPaths) -> Self {
         let (tx, rx) = dyno_core::crossbeam_channel::unbounded();
-        let serial = SerialService::new();
-        let api = ApiService::new();
-        let mqtt = MqttService::new();
+
+        let serial = match SerialService::new(tx.clone()) {
+            Ok(ok) => Some(ok),
+            Err(err) => {
+                toast_error!("{err}");
+                None
+            }
+        };
+
+        let api = ApiService::new(tx.clone());
+        let websocket = WebSocketService::new(tx.clone(), paths);
 
         Self {
+            data: Default::default(),
             serial,
             api,
-            mqtt,
+            websocket,
             serial_time_start: None,
             serial_time_stop: None,
             rx,
             tx,
+            roll: 0,
+            stream_data: false,
         }
     }
     pub fn init(&mut self, config: &dyno_core::DynoConfig) {
         match &self.api {
-            Some(api) => api.set_active(config.clone(), self.tx.clone()),
+            Some(api) => api.set_active(config.clone()),
             None => self.reconnect_api(config),
         }
         if self.serial.is_none() {
@@ -66,21 +76,17 @@ impl ServiceControl {
     }
     pub fn deinit(&self) {
         if let Some(api) = &self.api {
-            api.logout(self.tx.clone());
-            api.set_non_active(self.tx.clone());
+            api.logout();
+            api.set_non_active();
         }
-        if let Some(mqtt) = &self.mqtt {
-            mqtt.stop_subscribe();
-        }
+        self.websocket.stop();
+
         if let Some(serial) = &self.serial {
             serial.stop();
         }
     }
     pub fn rx(&self) -> Receiver<AsyncMsg> {
         self.rx.clone()
-    }
-    pub fn tx(&self) -> Sender<AsyncMsg> {
-        self.tx.clone()
     }
 
     #[inline]
@@ -89,23 +95,58 @@ impl ServiceControl {
     }
     #[inline]
     pub fn reconnect_api(&mut self, config: &dyno_core::DynoConfig) {
-        if let Some(api) = ApiService::new() {
+        if let Some(api) = ApiService::new(self.tx.clone()) {
             crate::toast_success!("SUCCES! connected to Api Endpoint: {}", api.url);
-            api.set_active(config.clone(), self.tx.clone());
+            api.set_active(config.clone());
             self.api = Some(api);
         }
     }
 
+    pub fn start_stream(&mut self) {
+        self.websocket.start();
+        self.stream_data = true;
+    }
+    pub fn stop_stream(&mut self) {
+        self.websocket.stop();
+        self.stream_data = false;
+    }
+
+    pub fn send_stream_data(&mut self, data: &dyno_core::Data) {
+        if !self.stream_data {
+            return;
+        };
+        if self.on_data(data) {
+            if let Err(err) = self.websocket.send_data(&self.data) {
+                dyno_core::log::error!("{err}");
+            }
+        }
+    }
+
+    pub fn on_data(&mut self, data: &dyno_core::Data) -> bool {
+        self.data[self.roll] = *data;
+        self.roll += 1;
+        if self.roll >= 15 {
+            self.roll = 0;
+            return true;
+        }
+        false
+    }
+}
+
+impl ServiceControl {
     #[inline]
-    pub fn mqtt(&self) -> Option<&MqttService> {
-        self.mqtt.as_ref()
+    pub fn ws(&self) -> &WebSocketService {
+        &self.websocket
     }
     #[inline]
+    pub fn mqtt_mut(&mut self) -> &mut WebSocketService {
+        &mut self.websocket
+    }
+
+    #[inline]
     pub fn reconnect_mqtt(&mut self) {
-        if let Some(mqtt) = MqttService::new() {
-            crate::toast_success!("SUCCES! connected to MQTT Broker",);
-            self.mqtt = Some(mqtt);
-        }
+        self.websocket.stop();
+        self.websocket.start();
     }
 }
 
@@ -124,7 +165,7 @@ impl ServiceControl {
     #[inline]
     pub fn start_serial(&mut self) {
         if let Some(serial) = &self.serial {
-            if let Err(err) = serial.start(self.tx()) {
+            if let Err(err) = serial.start() {
                 toast_error!("Serial Service Failed to start - {err}")
             }
             self.serial_time_start = Some(Utc::now().naive_utc());
@@ -140,7 +181,7 @@ impl ServiceControl {
 
     #[inline]
     pub fn reconnect_serial(&mut self) {
-        if let Some(serial) = SerialService::new() {
+        if let Ok(serial) = SerialService::new(self.tx.clone()) {
             crate::toast_success!(
                 "SUCCES! connected to Serial: [{}]:[{}-{}]",
                 serial.info.port_name,

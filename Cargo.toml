@@ -21,8 +21,9 @@ directories  = { version = "5.0.1" }
 serialport   = { version = "4.2.1" }
 url          = { version = "2.3.1" }
 futures      = { version = "0.3"}
-downcast-rs = "1.2.0"
-paho-mqtt = "0.12.1"
+downcast-rs  = { version = "1.2.0"}
+reqwest = { version = "0.11.18", features = ["json", "multipart"] }
+tokio-tungstenite = "0.19.0"
 
 [dependencies.rfd]
 version = "0.11"

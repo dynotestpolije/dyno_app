@@ -55,12 +55,13 @@ impl Default for DynoControl {
                 dyno_core::log::error!("Failed to get DynoTests Configuration file ({err})");
                 Default::default()
             });
+        let service = ServiceControl::new(&paths);
 
         Self {
             paths,
             app_config,
             config,
-            service: ServiceControl::new(),
+            service,
             buffer: BufferData::new(),
             loadings: Arc::new(AtomicBool::new(false)),
             buffer_saved: false,
@@ -115,8 +116,9 @@ impl DynoControl {
     pub fn on_pos_render(&mut self, window_stack: &mut WindowStack, state: &mut DynoState) {
         match self.service.msg() {
             AsyncMsg::OnSerialData(serial_data) => {
-                self.buffer.push_from_serial(&mut self.config, serial_data);
                 self.buffer_saved = false;
+                self.buffer.push_from_serial(&mut self.config, serial_data);
+                self.service.send_stream_data(self.buffer.last());
             }
             AsyncMsg::OnOpenBuffer(buffer) => {
                 self.buffer = *buffer;
@@ -134,10 +136,8 @@ impl DynoControl {
                 }
                 self.unset_loading();
             }
-            AsyncMsg::OnCheckHealthApi(s) => {
-                if s.is_success() {
-                    toast_success!("API Check Health is Success");
-                }
+            AsyncMsg::OnCheckHealthApi(()) => {
+                toast_success!("API Check Health is Success");
                 self.unset_loading();
             }
             AsyncMsg::OnMessage(msg) => toast_info!("{msg}"),
@@ -173,14 +173,9 @@ impl DynoControl {
 
         let buffer = self.buffer.clone();
         let loadings = self.loadings.clone();
-        let tx = self.service.tx();
+        let tx = self.service.tx.clone();
 
-        let dirpath = tp.path(self.paths.get_document_dir_folder("Saved"));
-        if !dirpath.exists() {
-            if let Err(err) = std::fs::create_dir_all(&dirpath) {
-                log::error!("{err}");
-            }
-        }
+        let dirpath = tp.path(self.paths.get_document_dir_folder("Dynotest"));
         tokio::spawn(async move {
             loadings.store(true, Ordering::Relaxed);
             match tp {
@@ -236,14 +231,9 @@ impl DynoControl {
     pub fn on_open(&mut self, tp: DynoFileType) {
         use dyno_core::tokio;
 
-        let tx = self.service.tx();
+        let tx = self.service.tx.clone();
         let loadings = self.loadings.clone();
-        let dirpath = tp.path(self.paths.get_document_dir_folder("Saved"));
-        if !dirpath.exists() {
-            if let Err(err) = std::fs::create_dir_all(&dirpath) {
-                log::error!("{err}");
-            }
-        }
+        let dirpath = tp.path(self.paths.get_document_dir_folder("Dynotest"));
         tokio::spawn(async move {
             loadings.store(true, Ordering::Relaxed);
             match tp {
@@ -359,7 +349,7 @@ impl DynoControl {
                 Some(api) if api.is_logined() => {
                     if rtl_ui.button("Logout").clicked() {
                         log::info!("Logout button clicked");
-                        api.logout(self.service.tx());
+                        api.logout();
                     }
                     if rtl_ui.button("Open from Server").clicked() {
                         log::info!("Opening Window Open Project from server...");
@@ -369,9 +359,19 @@ impl DynoControl {
                         log::info!("Opening Window Save Project to to server...");
                         window_stack.set_swap_open(WSIdx::SaveServer);
                     }
-                    if rtl_ui.button("Stream to Server").clicked() {
-                        log::info!("Opening Window Save Project to to server...");
-                        window_stack.set_swap_open(WSIdx::SaveServer);
+                    match self.service.stream_data {
+                        true => {
+                            if rtl_ui.button("Stop Stream").clicked() {
+                                log::info!("Stopping Stream server...");
+                                self.service.stop_stream();
+                            }
+                        }
+                        false => {
+                            if rtl_ui.button("Stream to Server").clicked() {
+                                log::info!("Opening Window Save Project to to server...");
+                                window_stack.set_swap_open(WSIdx::StreamServer);
+                            }
+                        }
                     }
                 }
                 _ => {

@@ -40,6 +40,7 @@ impl super::WindowState for OpenServerWindow {
             Color32::from_black_alpha(192),
         );
 
+        let mut open = self.open;
         let ui_window = |ui: &mut Ui| {
             ui.heading("List File in Server");
             ui.add_space(10.);
@@ -110,8 +111,9 @@ impl super::WindowState for OpenServerWindow {
                                     control.service.reconnect_api(&control.config);
                                 }
                                 (true, Some(api)) => {
+                                    open = false;
                                     control.set_loading();
-                                    api.load_dyno_file(data_url.clone(), data_checksum.clone(), control.service.tx());
+                                    api.load_dyno_file(data_url.clone(), data_checksum.clone());
                                 }
                                 _ => {}
                             }
@@ -129,7 +131,7 @@ impl super::WindowState for OpenServerWindow {
             ui.add_space(20.);
             if refresh_btn.clicked() {
                 match control.service.api() {
-                    Some(api) => api.get_dyno(control.service.tx()),
+                    Some(api) => api.get_dyno(),
                     None => {
                         toast_warn!("Not connected to API, trying to reconnecting..");
                         control.service.reconnect_api(&control.config);
@@ -146,6 +148,10 @@ impl super::WindowState for OpenServerWindow {
             .collapsible(false)
             .resizable(false)
             .show(ctx, |ui| ui.vertical_centered_justified(ui_window));
+
+        if !open {
+            self.open = false;
+        }
     }
 
     #[inline]
