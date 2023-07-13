@@ -49,7 +49,7 @@ path = "egui/crates/egui_extras"
 # git = "https://github.com/dynotestpolije/dyno_types.git"
 # branch = "main" 
 path = "../dyno_core"
-features = ["frontend", "checksum", "use_async", "use_excel", "use_log"]
+features = ["frontend", "checksum", "use_async", "use_excel", "use_log", "use_plot"]
 
 [dependencies.image]
 version = "0.24"

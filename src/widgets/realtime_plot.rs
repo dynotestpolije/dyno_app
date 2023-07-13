@@ -2,6 +2,8 @@ use dyno_core::{serde, AsStr, BufferData, PointShowed};
 use eframe::egui::*;
 use std::hash::Hash;
 
+use super::button::ButtonExt;
+
 #[cfg_attr(debug_assertions, derive(Debug))]
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(crate = "serde")]
@@ -92,6 +94,16 @@ impl RealtimePlot {
                 ui.label("Change behaviour with context menu right click in the plot");
             });
             ui.with_layout(Layout::right_to_left(Align::Min), |left_ui| {
+                if left_ui
+                    .open_button()
+                    .on_hover_text("Open Plot in Browser")
+                    .clicked()
+                {
+                    dyno_core::DynoPlot::new()
+                        .set_color(dyno_core::PlotColor::light())
+                        .create_dyno_plot(data)
+                        .show()
+                }
                 ComboBox::new("plot_panel_combobox", "Select Plot to Show")
                     .selected_text(self.panel.as_str())
                     .show_ui(left_ui, |ui| {
